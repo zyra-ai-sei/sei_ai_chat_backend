@@ -24,9 +24,10 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest
   ): Promise<string | object> {
-    const { prompt } = req.body;
+    const { prompt, family, model } = req.body;
     const address = req.userAddress
-    return this.llmService.sendMessage(prompt, address);
+    const userId = req.userId
+    return this.llmService.sendMessage(prompt, address, family, model, userId);
   }
 
   @httpPost("/addtxn")
@@ -34,10 +35,11 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest
   ): Promise<string | object> {
-    const {prompt} = req.body;
+    const {prompt, family, model} = req.body;
     const address = req.userAddress;
+    const userId = req.userId;
     const {orderId} = req.query;
-    return this.llmService.addtxn(prompt, address, orderId as string);
+    return this.llmService.addtxn(prompt, address, family, model, userId, orderId as string);
   }
 
   @httpGet("/getChatHistory")

@@ -70,7 +70,6 @@ export class UserOp {
       });
       return true;
     } catch (err) {
-      // console.log('error in registering the user',err)
       throw new Error("Error in registering the user");
     }
   }

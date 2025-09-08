@@ -11,7 +11,7 @@ const userSchema = new Schema(
     history: {
       type:Schema.Types.ObjectId,
       ref:'History'
-    }
+    },
   },
   {
     timestamps: true,
