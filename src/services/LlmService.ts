@@ -12,10 +12,12 @@ import { v4 as uuidv4 } from "uuid";
 import { UserService } from "./UserService";
 import { Chat } from "../types/history";
 import { TOKEN_ADDRESS_MAPPING } from "../data/token";
-import { createReactAgent } from "@langchain/langgraph/prebuilt";
+// LangGraph and LangChain imports for custom graph
+import { StateGraph, StateGraphArgs, END } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, BaseMessage, AIMessage } from "@langchain/core/messages";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
@@ -36,9 +38,27 @@ const systemPrompt = (address:string)=> `You are Zyra, a helpful assistant whose
 - For trades, suggest values, and strategies for the user.
 - For token transfers, or tx involving token transfers, first check if the user has enough funds.
 - Keep your responses brief, and to the point.`;
-// const prompt = ChatPromptTemplate.fromMessages([
-//   ["system", systemPrompt],
-// ]);
+
+/**
+ * Define the state for our graph.
+ * It will contain a list of messages.
+ */
+interface AgentState {
+  messages: BaseMessage[];
+}
+
+/**
+ * Define the channels for our graph state.
+ * The `messages` channel will be updated by concatenating new messages.
+ */
+const graphState: StateGraphArgs<AgentState>["channels"] = {
+  messages: {
+    value: (x: BaseMessage[], y: BaseMessage[]) => x.concat(y),
+    default: () => [],
+  },
+};
+
+
 @injectable()
 export class LlmService implements ILlmService {
   private genAI: ChatGoogleGenerativeAI;
@@ -52,7 +72,7 @@ export class LlmService implements ILlmService {
   ) {
     console.log("constructor");
     this.genAI = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash", // Updated model
       temperature: 0,
       apiKey: env.GEMINI_API_KEY,
     });
@@ -100,7 +120,8 @@ export class LlmService implements ILlmService {
     return messages
 
   }
-  // Initialize and store a chat session for a sessionId (generate if not provided)
+
+  // Initialize and store a chat session for a sessionId
   async initChat(address: string): Promise<any> {
     const toolsResponse = await this.mcpService.getTools();
     const tools =
@@ -108,18 +129,67 @@ export class LlmService implements ILlmService {
     const langGraphTools: StructuredTool[] = tools.map((tool: any) => {
       return new MCPToolWrapper(this.mcpService, tool);
     });
-    // Connect to your Atlas cluster or local Atlas deployment
-    const client = new MongoClient(env.MONGO_URI);
-    // Initialize the MongoDB checkpointer
-    const checkpointer = new MongoDBSaver({ client });
-    const agent = createReactAgent({
-      llm: this.genAI,
-      tools: langGraphTools,
-      stateModifier: systemPrompt(address),
-      checkpointSaver: checkpointer,
-    });
 
-    return agent;
+    // Bind the tools to the model
+    const modelWithTools = this.genAI.bindTools(langGraphTools);
+    
+    // ## Define Graph Nodes and Edges ##
+
+    // 1. The Agent Node: Calls the model to decide the next step.
+    const callModel = async (state: AgentState) => {
+      const { messages } = state;
+      const prompt = ChatPromptTemplate.fromMessages([
+          ["system", systemPrompt(address)],
+          new MessagesPlaceholder("messages"),
+      ]);
+      const chain = prompt.pipe(modelWithTools);
+      const response = await chain.invoke({ messages });
+      // We return a list, because this will be appended to the state
+      return { messages: [response] };
+    };
+
+    // 2. The Tool Node: Executes the tools chosen by the agent.
+    const toolNode = new ToolNode(langGraphTools);
+
+    // 3. Conditional Edge Logic: Determines whether to continue or end.
+    const shouldContinue = (state: AgentState) => {
+      const { messages } = state;
+      const lastMessage = messages[messages.length - 1];
+      // If the last message is an AIMessage with tool calls, route to the 'tools' node
+      if (lastMessage instanceof AIMessage && lastMessage.tool_calls && lastMessage.tool_calls.length > 0) {
+        return "tools";
+      }
+      // Otherwise, end the execution
+      return END;
+    };
+
+    // ## Construct the Graph ##
+    // ## Construct the Graph ##
+const workflow = new StateGraph<AgentState>({ channels: graphState });
+
+// Add the nodes
+workflow.addNode("agent", callModel);
+workflow.addNode("tools", toolNode);
+
+// Set the entrypoint to the 'agent' node
+workflow.setEntryPoint("agent");
+
+// Add the conditional edge from the 'agent' node
+workflow.addConditionalEdges("agent", shouldContinue, {
+  tools: "tools", // If the agent calls a tool, go to the 'tools' node
+  [END]: END,     // Otherwise, end the graph
+});
+
+// Add a regular edge to loop from the 'tools' node back to the 'agent' node
+workflow.addEdge("tools", "agent");
+
+    // ## Compile the Graph with a Checkpointer ##
+    const client = new MongoClient(env.MONGO_URI);
+    const checkpointer = new MongoDBSaver({ client });
+
+    const app = workflow.compile({ checkpointer });
+    
+    return app;
   }
 
   // Send a prompt to an existing chat session
