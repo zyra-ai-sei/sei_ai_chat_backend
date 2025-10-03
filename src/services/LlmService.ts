@@ -4,14 +4,7 @@ import { inject, injectable } from "inversify";
 import { ILlmService } from "./interfaces/ILlmService";
 import env from "../envConfig";
 import { TYPES } from "../ioc-container/types";
-import { MCPService } from "./MCPService";
-import { MCPToolWrapper } from "./MCPTool";
-import OpenAI from "openai";
-
-import { v4 as uuidv4 } from "uuid";
 import { UserService } from "./UserService";
-import { Chat } from "../types/history";
-import { TOKEN_ADDRESS_MAPPING } from "../data/token";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
@@ -20,22 +13,21 @@ import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
-import {
-  ChatPromptTemplate,
-  MessagesPlaceholder,
-} from "@langchain/core/prompts";
-import { ethers } from "ethers";
-import { twapABI } from "./twapABI";
+import toolsList from "../tools/langGraphTools";
 
 // The prompt is static and can be defined once.
-const systemPrompt = (address:string)=> `You are Zyra, a helpful assistant whose job is to automate, plan and execute trades on behalf of the user. You have access to the conversation history. Use it to answer the user's questions. User's address is ${address}. Note the following points:
-- You are doing transactions on Sei chain. The native token on Sei is sei. 
+const systemPrompt = (
+  address: string
+) => `You are Zyra, a helpful assistant whose job is to automate, plan and execute trades on behalf of the user. You have access to the conversation history. Use it to answer the user's questions. User's address is ${address}. Note the following points:
+- You are doing transactions on Sei chain. The native token on Sei is sei.
 - For transactions involving sei, it needs to be converted into an erc20 wsei token first(wrap), then the transaction can be executed. If sei is the destination, do the transaction in wsei then unwrap it into sei.
 - For some transacrtions, you may get a response that allowance is insufficient, in that case, use the approve_erc20 tool to get the allowance.
-- You can send multiple unsigned tx to the user, the user will sign them one by one. 
+- You can send multiple unsigned tx to the user, the user will sign them one by one.
 - For trades, suggest values, and strategies for the user.
 - For token transfers, or tx involving token transfers, first check if the user has enough funds.
-- Keep your responses brief, and to the point.`;
+- Keep your responses brief, and to the point.
+
+IMPORTANT: When using tools, ensure that tool responses follow the strict schema format where the output from tools should be directly be sent to the user without modification.`;
 // const prompt = ChatPromptTemplate.fromMessages([
 //   ["system", systemPrompt],
 // ]);
@@ -47,7 +39,6 @@ export class LlmService implements ILlmService {
   private client: any;
 
   constructor(
-    @inject(TYPES.MCPService) private mcpService: MCPService,
     @inject(TYPES.UserService) private userService: UserService
   ) {
     console.log("constructor");
@@ -56,58 +47,188 @@ export class LlmService implements ILlmService {
       temperature: 0,
       apiKey: env.GEMINI_API_KEY,
     });
-    this.client = new MultiServerMCPClient({
-      mcpServers: {
-        sei_tools: {
-          url: "http://localhost:3001/sse",
-          transport: "sse",
-        },
-      },
-    });
   }
 
-  async clearChat(address:string){
-    // Connect to your Atlas cluster or local Atlas deployment
+  async clearChat(address: string) {
     const client = new MongoClient(env.MONGO_URI);
-    // Initialize the MongoDB checkpointer
     const checkpointer = new MongoDBSaver({ client });
     await checkpointer.deleteThread(address);
-    
   }
-  async getChatHistory(address:string): Promise<any> {
-    if (!this.mcpService.isConnected()) {
-      await this.mcpService.connectToMCP();
-    }
-    //only initialize if needed
-    const chat = await this.initChat(address);
 
-    if (!chat) throw new Error("Chat session not initialized");
-    const initialState = await chat.getState({
-      configurable: { thread_id: address },
-    });
-    const state = initialState?.values?.messages;
-    const messages = state
-        .filter(message => {
-          const hasValidId = message.constructor.name === 'HumanMessage' || message.constructor.name === 'AIMessage';
-          const hasContent = message?.content && 
-                            typeof message?.content === 'string';
+  async getChatHistory(address: string): Promise<any> {
+    try {
+     
+
+      const chat = await this.initChat(address);
+      if (!chat) throw new Error("Chat session not initialized");
+
+      const initialState = await chat.getState({
+        configurable: { thread_id: address },
+      });
+
+      const state = initialState?.values?.messages;
+      const messages = state
+        .filter((message) => {
+          const hasValidId =
+            message.constructor.name === "HumanMessage" ||
+            message.constructor.name === "AIMessage" ||
+            message.constructor.name === "ToolMessage";
+          const hasContent =
+            message?.content && typeof message?.content === "string";
           return hasValidId && hasContent;
         })
-        .map(message => ({
-          type: message.constructor.name,
-          content: message.content
-        }));
-    return messages
+        .map((message) => {
+          if (message.constructor.name === "ToolMessage") {
+            // Parse tool content and include status if available
+            try {
+              const parsedContent = JSON.parse(message.content);
+              // Extract text from content array if it exists
+              let contentText = parsedContent.result?.content || parsedContent.result || parsedContent;
+              if (Array.isArray(contentText) && contentText.length > 0) {
+                // Find the first text content
+                const textContent = contentText.find(item => item.type === 'text');
+                contentText = textContent ? textContent.text : JSON.stringify(contentText);
+              }
 
+              return {
+                type: message.constructor.name,
+                content: contentText,
+                status: parsedContent.status || "unexecuted",
+                hash: parsedContent.hash, // Include transaction hash
+                toolName: message.tool_call_id || parsedContent.toolName,
+                timestamp: parsedContent.timestamp || new Date().toISOString(),
+                tool_output: parsedContent.result?.tool_output || parsedContent.tool_output,
+              };
+            } catch (parseError) {
+              console.warn("Failed to parse tool message content:", parseError);
+              return {
+                type: message.constructor.name,
+                content: message.content,
+                status: "unexecuted",
+                timestamp: new Date().toISOString(),
+              };
+            }
+          }
+
+          return {
+            type: message.constructor.name,
+            content: message.content,
+            timestamp: new Date().toISOString(),
+          };
+        });
+
+      return messages;
+    } catch (error) {
+      console.error("Error getting chat history:", error);
+      throw new Error(`Failed to retrieve chat history: ${error.message}`);
+    }
+  }
+
+  async updateToolStatus(
+    address: string,
+    toolId: number,
+    status: "completed" | "aborted" | "unexecuted",
+    hash?: string
+  ): Promise<boolean> {
+    let client: MongoClient | null = null;
+    try {
+      // Initialize MongoDB client
+      client = new MongoClient(env.MONGO_URI);
+      const checkpointer = new MongoDBSaver({ client });
+
+      // Get current checkpoint
+      const threadConfig = { configurable: { thread_id: address } };
+      const currentCheckpoint = await checkpointer.getTuple(threadConfig);
+
+      if (!currentCheckpoint?.checkpoint) {
+        console.log("No checkpoint found for address:", address);
+        return false;
+      }
+
+      // Access the checkpoint data correctly
+      const checkpointData = currentCheckpoint.checkpoint as any;
+      if (!checkpointData.values?.messages) {
+        console.log("No messages found in checkpoint");
+        return false;
+      }
+
+      const messages = checkpointData.values.messages;
+
+      // Find the ToolMessage with the matching toolId
+      const targetToolMessageIndex = messages
+        .map((msg: any, index: number) => ({ msg, index }))
+        .filter(({ msg }: any) => msg.constructor.name === "ToolMessage")
+        .map(({ msg, index }) => {
+          try {
+            const parsed = JSON.parse(msg.content);
+            return { parsed, index };
+          } catch {
+            return null;
+          }
+        })
+        .filter(item => item !== null)
+        .find(item => {
+          const toolOutput = item!.parsed.tool_output || 
+            (item!.parsed.result && typeof item!.parsed.result === 'object' ? item!.parsed.result.tool_output : undefined);
+          return toolOutput && toolOutput.id === toolId;
+        })?.index;
+
+      if (targetToolMessageIndex === undefined) {
+        console.log(`No tool message found with ID ${toolId} for address:`, address);
+        return false;
+      }
+
+      // Update the tool message content with status
+      const toolMessage = messages[targetToolMessageIndex];
+      try {
+        const parsedContent = JSON.parse(toolMessage.content);
+
+        // Add or update status, hash, and timestamp
+        parsedContent.status = status;
+        if (hash) {
+          parsedContent.hash = hash;
+        }
+        parsedContent.updatedAt = new Date().toISOString();
+
+        // Update the message content
+        toolMessage.content = JSON.stringify(parsedContent);
+
+        // Save the updated checkpoint with proper metadata
+        const metadata = {
+          source: "update" as const,
+          step: (currentCheckpoint.metadata?.step || 0) + 1,
+          parents: currentCheckpoint.metadata?.parents || {},
+        };
+
+        await checkpointer.put(threadConfig, checkpointData, metadata);
+
+        console.log(`Updated tool status to ${status}${hash ? ` with hash ${hash}` : ''} for tool ID ${toolId} in address ${address}`);
+        return true;
+      } catch (parseError) {
+        console.error("Failed to parse tool message content:", parseError);
+        return false;
+      }
+    } catch (error) {
+      console.error("Error updating tool status:", error);
+      return false;
+    } finally {
+      if (client) {
+        await client.close();
+      }
+    }
+  }
+
+  async abortLatestTool(address: string): Promise<boolean> {
+    // This method is deprecated - use updateToolStatus with specific toolId instead
+    console.warn("abortLatestTool is deprecated. Use updateToolStatus with specific toolId.");
+    return false;
   }
   // Initialize and store a chat session for a sessionId (generate if not provided)
   async initChat(address: string): Promise<any> {
-    const toolsResponse = await this.mcpService.getTools();
-    const tools =
-      toolsResponse?.result?.tools || toolsResponse?.tools || toolsResponse;
-    const langGraphTools: StructuredTool[] = tools.map((tool: any) => {
-      return new MCPToolWrapper(this.mcpService, tool);
-    });
+    
+      const convertedLangGraphTools = toolsList
+    let langGraphTools: StructuredTool[] = convertedLangGraphTools
+    
     // Connect to your Atlas cluster or local Atlas deployment
     const client = new MongoClient(env.MONGO_URI);
     // Initialize the MongoDB checkpointer
@@ -124,9 +245,9 @@ export class LlmService implements ILlmService {
 
   // Send a prompt to an existing chat session
   async sendMessage(prompt: string, address: string): Promise<string | object> {
-    if (!this.mcpService.isConnected()) {
-      await this.mcpService.connectToMCP();
-    }
+    // if (!this.mcpService.isConnected()) {
+    //   await this.mcpService.connectToMCP();
+    // }
     //only initialize if needed
     const chat = await this.initChat(address);
 
@@ -155,7 +276,61 @@ export class LlmService implements ILlmService {
       chat: newMessages[newMessages.length - 1].content,
       tools: newMessages
         .filter((msg: any) => msg.constructor.name === "ToolMessage")
-        .map((msg: any) => JSON.parse(msg?.content)?.result).filter((msg: any) => msg!=null),
+        .map((msg: any, toolIndex: number) => {
+          try {
+            // Parse the JSON string content
+            const parsed = JSON.parse(msg.content);
+            console.log('hard luck', parsed)
+            
+            if (parsed && typeof parsed === 'object') {
+              // MCP tool response structure
+              const mcpResponse = parsed;
+              let content = '';
+              
+              // Extract text from content array
+              if (mcpResponse && typeof mcpResponse === 'object' && mcpResponse.content && Array.isArray(mcpResponse.content) && mcpResponse.content.length > 0) {
+                const textItem = mcpResponse.content.find((item: any) => item.type === 'text');
+                content = textItem ? textItem.text : JSON.stringify(mcpResponse.content);
+              } else {
+                content = JSON.stringify(mcpResponse);
+              }
+              
+              // Extract tool_output and add ID
+              const toolOutput = parsed.tool_output || (mcpResponse && typeof mcpResponse === 'object' ? mcpResponse.tool_output : undefined);
+              if (toolOutput && typeof toolOutput === 'object') {
+                toolOutput.id = toolIndex;
+              }
+
+              if(toolOutput?.transaction || JSON.parse(content)?.transaction){
+                return {
+                id: toolIndex,
+                content: content,
+                tool_output: toolOutput ? toolOutput : JSON.parse(content)
+              };
+              }
+              return {
+                id: toolIndex,
+                content: content,
+                tool_output: undefined
+              };
+            } else {
+              // Fallback
+              return {
+                id: toolIndex,
+                content: msg.content || '',
+                tool_output: undefined
+              };
+            }
+          } catch (error) {
+            // If parsing fails, return as-is
+            return {
+              id: toolIndex,
+              content: msg.content || '',
+              tool_output: undefined
+            };
+          }
+        })
+        .filter((msg: any) => msg != null),
     };
     console.log(
       "Response from agent:",
@@ -165,87 +340,4 @@ export class LlmService implements ILlmService {
     return res;
   }
 
-  
-  async addtxn(prompt: string, address: string, orderId?:string): Promise<string | object> {
-    if (!this.mcpService.isConnected()) {
-      await this.mcpService.connectToMCP();
-    }
-    //only initialize if needed
-    const chat = await this.initChat(address);
-
-    if (!chat) throw new Error("Chat session not initialized");
-
-    const initialState = await chat.getState({
-      configurable: { thread_id: address },
-    });
-    console.log("hi");
-    console.dir(initialState);
-
-    const agentFinalState = await chat.invoke(
-      {
-        messages: [
-          new HumanMessage(
-            prompt +
-              " - get the details for this hash of just executed transaction by calling get_transaction tool. Give a breif output assuming the reader does not care about the technicalities. Give a link in block explorer as well in the format: https://seitrace.com/tx/<tx hash>. Then, continue with your previous task/process if its ongoing."
-          ),
-        ],
-      }, // Use the actual prompt instead of hardcoded message
-      { configurable: { thread_id: address } } // Use address as thread_id
-    );
-
-    const newMessages = initialState?.values?.messages
-      ? agentFinalState.messages.slice(initialState.values.messages.length)
-      : agentFinalState.messages;
-    console.log("Agent final state:");
-    console.dir(agentFinalState);
-    console.log("New messages:");
-    console.dir(newMessages);
-
-    const res = {
-      chat: newMessages[newMessages.length - 1].content,
-      tools: newMessages
-        .filter((msg: any) => msg.constructor.name === "ToolMessage")
-        .map((msg: any) => JSON.parse(msg?.content)?.result),
-    };
-
-    console.log("this is your final state");
-    console.dir(
-      JSON.parse(
-        newMessages
-          .filter((msg: any) => msg.constructor.name === "ToolMessage")
-          .map((msg: any) => JSON.parse(msg?.content)?.result)[0].content[0]
-          .text
-      ),
-      { depth: null }
-    );
-
-    if (
-      newMessages.filter((msg: any) => msg.constructor.name === "ToolMessage")
-    ) {
-      try {
-        const txObject = JSON.parse(
-          newMessages
-            .filter((msg: any) => msg.constructor.name === "ToolMessage")
-            .map((msg: any) => JSON.parse(msg?.content)?.result)[0].content[0]
-            .text
-        );
-        await this.userService.addUserTransaction(address, {
-          hash: txObject?.hash,
-          value: txObject?.value,
-          token: txObject?.token,
-          gas: txObject?.gas,
-          gasPrice: txObject?.gasPrice,
-          from: txObject?.from,
-          to: txObject?.to,
-          type: txObject?.type,
-          input: txObject?.input,
-          blockNumber: txObject?.blockNumber,
-          orderId: orderId?orderId:undefined,
-        });
-      } catch (err) {
-        console.error("Failed to parse transaction JSON:", err);
-      }
-    }
-    return res;
-  }
 }

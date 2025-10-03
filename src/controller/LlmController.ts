@@ -29,17 +29,6 @@ export class LlmController {
     return this.llmService.sendMessage(prompt, address);
   }
 
-  @httpPost("/addtxn")
-  private async addtxn(
-    @request()
-    req: AuthenticatedRequest
-  ): Promise<string | object> {
-    const {prompt} = req.body;
-    const address = req.userAddress;
-    const {orderId} = req.query;
-    return this.llmService.addtxn(prompt, address, orderId as string);
-  }
-
   @httpGet("/getChatHistory")
   private async getChatHistory(
     @request()
@@ -47,6 +36,34 @@ export class LlmController {
   ): Promise<string | object> {
     const address = req.userAddress;
     return this.llmService.getChatHistory(address);
+  }
+
+  @httpPost("/completeTool")
+  private async completeTool(
+    @request()
+    req: AuthenticatedRequest
+  ): Promise<{ success: boolean }> {
+    const address = req.userAddress;
+    const { toolId, hash } = req.body;
+    if (toolId === undefined || toolId === null) {
+      return { success: false };
+    }
+    const success = await this.llmService.updateToolStatus(address, toolId, 'completed', hash);
+    return { success };
+  }
+
+  @httpPost("/abortTool")
+  private async abortTool(
+    @request()
+    req: AuthenticatedRequest
+  ): Promise<{ success: boolean }> {
+    const address = req.userAddress;
+    const { toolId } = req.body;
+    if (toolId === undefined || toolId === null) {
+      return { success: false };
+    }
+    const success = await this.llmService.updateToolStatus(address, toolId, 'aborted');
+    return { success };
   }
 
   @httpGet("/clearChat")

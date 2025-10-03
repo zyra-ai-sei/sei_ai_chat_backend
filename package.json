@@ -52,6 +52,11 @@
     "redis": "^4.7.0",
     "reflect-metadata": "^0.2.2",
     "socket.io": "^4.8.1",
-    "validator": "^13.12.0"
-  }
+    "validator": "^13.12.0",
+    "viem": "^2.37.8",
+       "zod": "^3.25.32",
+    "@modelcontextprotocol/sdk": "^1.7.0",
+		"@orbs-network/twap-sdk": "^4.0.38"
+  },
+  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

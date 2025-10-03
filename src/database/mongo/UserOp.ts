@@ -114,8 +114,9 @@ export class UserOp {
         user:user._id,
       })
       transaction.save();
+      return transaction.toObject();
     } catch(err){
-
+      throw new Error("Error in updating user Transaction")
     }
   }
 
