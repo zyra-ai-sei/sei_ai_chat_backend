@@ -18,7 +18,7 @@ export class TransactionService {
       if (!this.mcpService.isConnected()) {
         await this.mcpService.connectToMCP();
       }
-
+      console.log("Fetching transaction info for hash:", txHash);
       // Call get_transaction tool directly
       const transactionData = await this.mcpService.callTool(
         "get_transaction",
@@ -26,7 +26,7 @@ export class TransactionService {
           txHash: txHash,
         }
       );
-
+      console.log("Transaction data received:", transactionData);
       if (transactionData && transactionData.result) {
         const txJsonString = transactionData?.result?.content?.[0]?.text;
         const txObject = JSON.parse(txJsonString || "");
