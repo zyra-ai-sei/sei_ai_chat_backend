@@ -35,7 +35,7 @@ export const getTransactionTool = langchainTools.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(transaction, null, 2),
+            text: services.helpers.formatJson(transaction),
           },
         ],
       };
@@ -289,7 +289,7 @@ export const getBalanceTool = langchainTools.tool(
                 network,
                 balance: {
                   wei: balance.wei.toString(),
-                  sei: balance.sei,
+                  ether: balance.sei,
                 },
               },
               null,
@@ -395,31 +395,73 @@ export const getErc20BalanceTool = langchainTools.tool(
 
 export const getTokenBalanceTool = langchainTools.tool(
   async ({
-    address,
-    token,
-    network = "sei",
-  }: {
-    address: string;
-    token: string;
-    network?: string;
+    tokenAddress,
+    ownerAddress,
+    network = DEFAULT_NETWORK,
   }): Promise<any> => {
-    return await services.getERC20Balance(token, address, network);
+    try {
+      console.log("bitch");
+      const balance = await services.getERC20Balance(
+        tokenAddress,
+        ownerAddress,
+        network
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                tokenAddress,
+                owner: ownerAddress,
+                network,
+                raw: balance.raw.toString(),
+                formatted: balance.formatted,
+                symbol: balance.token.symbol,
+                decimals: balance.token.decimals,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error fetching token balance: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        ],
+        isError: true,
+      };
+    }
   },
   {
     name: "get_token_balance",
     description:
       "Get the token balance for an address using token symbol or address",
     schema: z.object({
-      address: z
+      tokenAddress: z
         .string()
-        .describe("The wallet address to check the balance for"),
-      token: z
+        .describe(
+          "The contract address name of the ERC20 token (e.g., '0x3894085Ef7Ff0f0aeDf52E2A2704928d1Ec074F1')"
+        ),
+      ownerAddress: z
         .string()
-        .describe("The token symbol (e.g., 'USDC') or contract address"),
+        .describe(
+          "The wallet address name to check the balance for (e.g., '0x1234...')"
+        ),
       network: z
         .string()
         .optional()
-        .describe("Network name or chain ID. Defaults to sei."),
+        .describe(
+          "Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet', etc.) or chain ID. Supports all Sei networks. Defaults to sei."
+        ),
     }),
   }
 );
@@ -488,17 +530,23 @@ export const transferSeiTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      const result = await services.buildSeiTransferTx(
-        to as `0x${string}`,
-        amount,
-        network
-      );
+      const txHash = await services.transferSei(to, amount, network);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: JSON.stringify(
+              {
+                success: true,
+                txHash,
+                to,
+                amount,
+                network,
+              },
+              null,
+              2
+            ),
           },
         ],
       };
@@ -531,46 +579,31 @@ export const transferSeiTool = langchainTools.tool(
 );
 
 export const transferTokenTool = langchainTools.tool(
-  async ({
-    to,
-    amount,
-    token,
-    network = DEFAULT_NETWORK,
-  }: {
-    to: string;
-    amount: string;
-    token: string;
-    network?: string;
-  }) => {
+  async ({ tokenAddress, toAddress, amount, network = DEFAULT_NETWORK }) => {
     try {
-      // Try to resolve token symbol to address, or use as address if it starts with 0x
-      let tokenAddress = token;
-      if (!token.startsWith("0x")) {
-        tokenAddress = await services.getTokenAddress(token);
-      }
-      
-      console.log("wwe", to, amount, tokenAddress, network);
-      const result = await services.buildTransferERC20(
-        tokenAddress as `0x${string}`,
-        to as `0x${string}`,
+      const unsignedTx = await services.buildTransferERC20(
+        tokenAddress,
+        toAddress,
         amount,
         network
       );
-
+      console.log("4");
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: "An unsigned ERC20 transfer transaction has been prepared. Please sign and send it using your wallet.",
           },
         ],
+        // Use tool_output to return the structured transaction object to the client
+        tool_output: unsignedTx,
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error transferring ${amount} ${token} to ${to}: ${
+            text: `Error building ERC20 transfer transaction: ${
               error instanceof Error ? error.message : String(error)
             }`,
           },
@@ -581,17 +614,24 @@ export const transferTokenTool = langchainTools.tool(
   },
   {
     name: "transfer_token",
-    description: "Transfer tokens using symbol or address",
+    description:
+      "Transfer ERC20 tokens to another address. This creates an unsigned transaction that can then be signed by the user.",
     schema: z.object({
-      to: z.string().describe("The recipient address"),
-      amount: z.string().describe("The amount to transfer"),
-      token: z
+      tokenAddress: z
         .string()
-        .describe("The token symbol (e.g., 'USDC') or contract address"),
+        .describe("The address of the ERC20 token contract"),
+      toAddress: z.string().describe("The recipient address"),
+      amount: z
+        .string()
+        .describe(
+          "The amount of tokens to send (in token units, e.g., '10' for 10 tokens, dont include decimals)"
+        ),
       network: z
         .string()
         .optional()
-        .describe("Network name or chain ID. Defaults to sei."),
+        .describe(
+          "Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet') or chain ID. Defaults to sei."
+        ),
     }),
   }
 );
@@ -606,7 +646,7 @@ export const transferNftTool = langchainTools.tool(
     tokenId,
     network = DEFAULT_NETWORK,
   }: {
-    fromAddress:string;
+    fromAddress: string;
     to: string;
     tokenAddress: string;
     tokenId: string;
@@ -625,9 +665,10 @@ export const transferNftTool = langchainTools.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: "An unsigned ERC721 (NFT) transfer transaction has been prepared. Please sign and send it using your wallet.",
           },
         ],
+        tool_output: result,
       };
     } catch (error) {
       return {
@@ -661,22 +702,18 @@ export const transferNftTool = langchainTools.tool(
 
 export const transferErc1155Tool = langchainTools.tool(
   async ({
-    to,
     tokenAddress,
+    fromAddress,
+    toAddress,
     tokenId,
     amount,
     network = DEFAULT_NETWORK,
-  }: {
-    to: string;
-    tokenAddress: string;
-    tokenId: string;
-    amount: string;
-    network?: string;
   }) => {
     try {
-      const result = await services.transferERC1155(
+      const unsignedTx = await services.buildTransferERC1155(
         tokenAddress,
-        to,
+        fromAddress,
+        toAddress,
         BigInt(tokenId),
         amount,
         network
@@ -686,16 +723,18 @@ export const transferErc1155Tool = langchainTools.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text: "An unsigned ERC1155 transfer transaction has been prepared. Please sign and send it using your wallet.",
           },
         ],
+        // Use tool_output to return the structured transaction object to the client
+        tool_output: unsignedTx,
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error transferring ${amount} of ERC1155 token ${tokenId} from ${tokenAddress} to ${to}: ${
+            text: `Error building ERC1155 transfer transaction: ${
               error instanceof Error ? error.message : String(error)
             }`,
           },
@@ -708,16 +747,23 @@ export const transferErc1155Tool = langchainTools.tool(
     name: "transfer_erc1155",
     description: "Transfer ERC1155 tokens to an address",
     schema: z.object({
-      to: z.string().describe("The recipient address"),
       tokenAddress: z
         .string()
-        .describe("The contract address of the ERC1155 token"),
-      tokenId: z.string().describe("The token ID"),
-      amount: z.string().describe("The amount to transfer"),
+        .describe("The address of the ERC1155 token contract"),
+      fromAddress: z.string().describe("The current owner address"),
+      toAddress: z.string().describe("The recipient address"),
+      tokenId: z.string().describe("The token ID to transfer (e.g., '1234')"),
+      amount: z
+        .string()
+        .describe(
+          "The amount of tokens to transfer (e.g., '1' for NFTs or '10' for fungible tokens)"
+        ),
       network: z
         .string()
         .optional()
-        .describe("Network name or chain ID. Defaults to sei."),
+        .describe(
+          "Network name (e.g., 'sei', 'sei-testnet', 'sei-devnet') or chain ID. Defaults to sei."
+        ),
     }),
   }
 );
@@ -751,6 +797,7 @@ export const approveTokenSpendingTool = langchainTools.tool(
             text: JSON.stringify(result, null, 2),
           },
         ],
+        tool_output: result,
       };
     } catch (error) {
       return {
@@ -810,6 +857,7 @@ export const approveErc20Tool = langchainTools.tool(
             text: JSON.stringify(result, null, 2),
           },
         ],
+        tool_output: result,
       };
     } catch (error) {
       return {
@@ -1122,6 +1170,7 @@ export const wrapSeiTool = langchainTools.tool(
             text: JSON.stringify(result, null, 2),
           },
         ],
+        tool_output: result,
       };
     } catch (error) {
       return {
@@ -1168,6 +1217,7 @@ export const unwrapSeiTool = langchainTools.tool(
             text: JSON.stringify(result, null, 2),
           },
         ],
+        tool_output: result,
       };
     } catch (error) {
       return {
@@ -1314,97 +1364,6 @@ export const getPriceOfTokenTool = langchainTools.tool(
 );
 
 // TRADING/SWAP TOOLS
-
-export const createTwapOrderTool = langchainTools.tool(
-  async ({
-    srcTokenAddress,
-    destTokenAddress,
-    srcAmount,
-    fillDelay,
-    chunks,
-    deadline,
-    limitPrice,
-    orderType,
-    network = DEFAULT_NETWORK,
-  }: {
-    srcTokenAddress: string;
-    destTokenAddress: string;
-    srcAmount: string;
-    fillDelay: number;
-    chunks: number;
-    deadline: number;
-    limitPrice: string;
-    orderType: string;
-    network?: string;
-  }) => {
-    try {
-      // Import the OrderTypeEnum
-      const { OrderTypeEnum } = await import("./enums/orderTypeEnum");
-      const orderTypeValue =
-        OrderTypeEnum[orderType as keyof typeof OrderTypeEnum];
-
-      const result = await services.buildask(
-        srcTokenAddress,
-        destTokenAddress,
-        srcAmount,
-        fillDelay,
-        chunks,
-        deadline,
-        limitPrice,
-        orderTypeValue,
-        network
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error creating TWAP order: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  },
-  {
-    name: "create_twap_order",
-    description: "Create a TWAP (Time-Weighted Average Price) order",
-    schema: z.object({
-      srcToken: z.string().describe("Source token symbol or address"),
-      dstToken: z.string().describe("Destination token symbol or address"),
-      srcAmount: z.string().describe("Amount of source token to swap"),
-      dstMinAmount: z
-        .string()
-        .describe("Minimum amount of destination token to receive"),
-      deadline: z
-        .string()
-        .describe("Order deadline (e.g., '2h', '1d', '2024-12-31T23:59:59Z')"),
-      chunks: z
-        .number()
-        .optional()
-        .describe("Number of chunks to split the order into"),
-      fillDelay: z
-        .string()
-        .optional()
-        .describe("Delay between fills (e.g., '5m', '1h')"),
-      network: z
-        .string()
-        .optional()
-        .describe("Network name or chain ID. Defaults to sei."),
-    }),
-  }
-);
 
 export const createOrderTool = langchainTools.tool(
   async ({
@@ -1666,7 +1625,6 @@ export const convertAddressToTokenSymbolTool = langchainTools.tool(
 );
 
 const toolsList = [
-
   // Network Tools
   getChainInfoTool,
   getSupportedNetworksTool,
@@ -1713,7 +1671,6 @@ const toolsList = [
   getPriceOfTokenTool,
 
   // Trading/Swap Tools
-  createTwapOrderTool,
   createOrderTool,
 
   // Utility Tools
