@@ -24,7 +24,7 @@ container.bind<UserController>(TYPES.UserController).to(UserController)
 container.bind<TransactionController>(TYPES.TransactionController).to(TransactionController);
 
 container.bind<AuthService>(TYPES.AuthService).to(AuthService)
-container.bind<ILlmService>(TYPES.LlmService).to(LlmService)
+container.bind<ILlmService>(TYPES.LlmService).to(LlmService).inSingletonScope()
 container.bind<RedisService>(TYPES.RedisService).to(RedisService)
 container.bind<MCPService>(TYPES.MCPService).to(MCPService).inSingletonScope()
 container.bind<UserService>(TYPES.UserService).to(UserService);

@@ -530,25 +530,17 @@ export const transferSeiTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      const txHash = await services.transferSei(to, amount, network);
+      const unsignedTx = await services.buildSeiTransferTx(to, amount, network);
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                success: true,
-                txHash,
-                to,
-                amount,
-                network,
-              },
-              null,
-              2
-            ),
+            text: "An unsigned ERC20 transfer transaction has been prepared. Please sign and send it using your wallet.",
           },
         ],
+        // Use tool_output to return the structured transaction object to the client
+        tool_output: unsignedTx,
       };
     } catch (error) {
       return {

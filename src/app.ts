@@ -130,5 +130,27 @@ arrowServer.app.get('/', (req, res) => {
 
 arrowServer.app.emit('new2chat','hi there')
 
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+  console.log(`${signal} signal received: closing HTTP server and database connections`);
+  try {
+    // Import TYPES to get the correct symbol
+    const { TYPES } = await import('./ioc-container/types');
+    const llmService = container.get<any>(TYPES.LlmService);
+    if (llmService && typeof llmService.dispose === 'function') {
+      await llmService.dispose();
+    }
+    await mongoose.connection.close();
+    console.log('Database connections closed');
+    process.exit(0);
+  } catch (error) {
+    console.error('Error during graceful shutdown:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 
 

@@ -1,7 +1,7 @@
-import { controller, httpGet, httpPost, request } from "inversify-express-utils";
+import { controller, httpGet, httpPost, request, response } from "inversify-express-utils";
 import { inject } from "inversify";
 import { TYPES } from "../ioc-container/types";
-import { type Request } from "express";
+import { Response } from "express";
 import { ILlmService } from "../services/interfaces/ILlmService";
 import AuthMiddleware from "../middleware/AuthMiddleware";
 import { AuthenticatedRequest } from "../types/requestTypes";
@@ -27,6 +27,58 @@ export class LlmController {
     const { prompt } = req.body;
     const address = req.userAddress
     return this.llmService.sendMessage(prompt, address);
+  }
+
+  @httpGet("/stream")
+  private async stream(
+    @request() req: AuthenticatedRequest,
+    @response() res: Response
+  ): Promise<void> {
+    const promptParam = req.query.prompt;
+    const prompt = Array.isArray(promptParam) ? promptParam.join(" ") : promptParam;
+
+    if (typeof prompt !== "string" || !prompt.trim()) {
+      res.status(400).json({ success: false, message: "prompt query parameter is required" });
+      return;
+    }
+
+    const address = req.userAddress;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    let closed = false;
+    const handleClose = () => {
+      closed = true;
+    };
+
+    req.on("close", handleClose);
+
+    try {
+      for await (const chunk of this.llmService.streamMessage(prompt, address)) {
+        if (closed) {
+          break;
+        }
+        console.log('stream', JSON.stringify(chunk))
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      }
+
+      if (!closed) {
+        res.write("event: end\ndata: {}\n\n");
+      }
+    } catch (error) {
+      console.error("Error streaming LLM response:", error);
+      if (!closed) {
+        res.write(`event: error\ndata: ${JSON.stringify({ message: "Stream failed" })}\n\n`);
+      }
+    } finally {
+      req.off("close", handleClose);
+      if (!closed) {
+        res.end();
+      }
+    }
   }
 
   @httpGet("/getChatHistory")
