@@ -1,0 +1,17 @@
+{
+  "lc": 1,
+  "type": "constructor",
+  "id": [
+    "langchain_core",
+    "messages",
+    "ToolMessage"
+  ],
+  "kwargs": {
+    "content": "{\n  \"text\": \"An unsigned SEI transfer transaction has been prepared. Please sign and send it using your wallet.\",\n  \"tool_output\": [\n    {\n      \"transaction\": {\n        \"to\": \"0xad7f82083455a3df324080af04cd9855b9f2d726\",\n        \"value\": \"500000000000000000\"\n      },\n      \"metadata\": {\n        \"types\": {\n          \"to\": \"address\",\n          \"value\": \"uint256\"\n        },\n        \"token\": {\n          \"symbol\": \"SEI\",\n          \"decimals\": 18,\n          \"formattedAmount\": \"0.5\"\n        }\n      },\n      \"executionId\": \"e8350032-bee9-415d-a178-bd108ecb3853\"\n    }\n  ]\n}",
+    "tool_call_id": "4dafd1d5-c3b3-4cd5-8be5-547f1cc2064a",
+    "name": "transfer_sei",
+    "additional_kwargs": {},
+    "response_metadata": {},
+    "id": "72567ce3-de08-4e8b-b67b-4f4fb3f1dd36"
+  }
+}

@@ -11,6 +11,7 @@ import {
 import { DEFAULT_NETWORK } from "../chains";
 import { getPublicClient, getWalletClientFromProvider } from "./clients";
 import * as services from "./index";
+import { randomUUID } from "crypto";
 
 // Standard ERC20 ABI for transfers
 const erc20TransferAbi = [
@@ -456,7 +457,8 @@ export async function buildSeiTransferTx(
         decimals: 18,
         formattedAmount: amount
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }
 
@@ -505,7 +507,8 @@ export async function buildTransferERC20(
         decimals,
         formattedAmount: amount
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }
 
@@ -555,7 +558,8 @@ export async function buildApproveERC20(
         decimals,
         formattedAmount: amount
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }
 
@@ -609,7 +613,8 @@ export async function buildTransferERC721(
         symbol: tokenSymbol,
         tokenId: tokenId.toString()
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }
 
@@ -668,7 +673,8 @@ export async function buildTransferERC1155(
         tokenId: tokenId.toString(),
         formattedAmount: amount
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }
 

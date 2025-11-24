@@ -4,6 +4,7 @@ import { DEFAULT_NETWORK } from "../chains";
 import { parseEther, type Hash, encodeFunctionData } from "viem";
 import * as services from "./index";
 import wseiabi from "./wseiABI";
+import { randomUUID } from "crypto";
 
 // Replace with actual wSEI contract address
 const WSEI_CONTRACT_ADDRESS = '0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7';
@@ -26,6 +27,7 @@ export function buildDepositSEITx(
     to: WSEI_CONTRACT_ADDRESS,
     value: rawAmount.toString(),
     data: '0xd0e30db0', // deposit() function selector
+    executionId: randomUUID()
   };
 }
 
@@ -59,7 +61,8 @@ export function buildWithdrawSEITx(
   
   return {
     to: WSEI_CONTRACT_ADDRESS,
-    data: data
+    data: data,
+    executionId: randomUUID()
   };
 }
 

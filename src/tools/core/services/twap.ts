@@ -12,6 +12,7 @@ import { getPublicClient, getWalletClientFromProvider } from "./clients";
 import * as services from "./index";
 import { constructSDK, TimeUnit } from "@orbs-network/twap-sdk";
 import { OrderTypeEnum } from "../../enums/orderTypeEnum";
+import { randomUUID } from "crypto";
 
 const twap_abi = [
   {
@@ -210,7 +211,6 @@ export async function buildask(
     srcChunkAmount: srcTokenChunkAmount,
     deadline:deadlineMS,
   });
-  console.log("askParams", askParams);
 
   // Get token symbols for metadata
   const [srcSymbol, destSymbol] = await Promise.all([
@@ -261,6 +261,7 @@ export async function buildask(
         fillDelay: fillDelayValue,
         isMarketOrder
       }
-    }
+    },
+    executionId: randomUUID()
   };
 }

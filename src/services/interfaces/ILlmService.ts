@@ -19,5 +19,11 @@ export interface ILlmService {
         status: "completed" | "aborted" | "unexecuted",
         hash?: string
     ): Promise<boolean>;
+    updateMessageById(
+        address: string,
+        messageId: string,
+        executionState: "completed" | "pending" | "failed",
+        additionalData?: Record<string, any>
+    ): Promise<boolean>;
     abortLatestTool(address: string): Promise<boolean>;
 }

@@ -118,6 +118,32 @@ export class LlmController {
     return { success };
   }
 
+  @httpPost("/updateMessageState")
+  private async updateMessageState(
+    @request()
+    req: AuthenticatedRequest
+  ): Promise<{ success: boolean; message?: string }> {
+    const address = req.userAddress;
+    const { messageId, executionState, additionalData } = req.body;
+    
+    if (!messageId || !executionState) {
+      return { success: false, message: "Missing messageId or executionState" };
+    }
+    
+    if (!["completed", "pending", "failed"].includes(executionState)) {
+      return { success: false, message: "Invalid executionState. Must be completed, pending, or failed" };
+    }
+    
+    const success = await this.llmService.updateMessageById(
+      address, 
+      messageId, 
+      executionState,
+      additionalData
+    );
+    
+    return { success, message: success ? "Message updated successfully" : "Failed to update message" };
+  }
+
   @httpGet("/clearChat")
   private async clearChat(
     @request()

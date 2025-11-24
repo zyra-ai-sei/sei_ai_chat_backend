@@ -14,23 +14,11 @@ import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
 import toolsList from "../tools/langGraphTools";
+import { getSystemPrompt } from "../utils/prompts";
+import fs, { mkdirSync, writeFileSync } from "fs";
+import { json } from "stream/consumers";
+import path from "path";
 
-// The prompt is static and can be defined once.
-const systemPrompt = (
-  address: string
-) => `You are Zyra, a helpful assistant whose job is to automate, plan and execute trades on behalf of the user. You have access to the conversation history. Use it to answer the user's questions. User's address is ${address}. Note the following points:
-- You are doing transactions on Sei chain. The native token on Sei is sei.
-- For transactions involving sei, it needs to be converted into an erc20 wsei token first(wrap), then the transaction can be executed. If sei is the destination, do the transaction in wsei then unwrap it into sei.
-- For some transacrtions, you may get a response that allowance is insufficient, in that case, use the approve_erc20 tool to get the allowance.
-- You can send multiple unsigned tx to the user, the user will sign them one by one.
-- For trades, suggest values, and strategies for the user.
-- For token transfers, or tx involving token transfers, first check if the user has enough funds.
-- Keep your responses brief, and to the point.
-
-IMPORTANT: When using tools, ensure that tool responses follow the strict schema format where the output from tools should be directly be sent to the user without modification.`;
-// const prompt = ChatPromptTemplate.fromMessages([
-//   ["system", systemPrompt],
-// ]);
 @injectable()
 export class LlmService implements ILlmService {
   private genAI: ChatGoogleGenerativeAI;
@@ -39,23 +27,21 @@ export class LlmService implements ILlmService {
   private mongoClient: MongoClient;
   private checkpointer: MongoDBSaver;
 
-  constructor(
-    @inject(TYPES.UserService) private userService: UserService
-  ) {
+  constructor(@inject(TYPES.UserService) private userService: UserService) {
     console.log("constructor");
     this.genAI = new ChatGoogleGenerativeAI({
       model: "gemini-2.5-flash",
       temperature: 0,
       apiKey: env.GEMINI_API_KEY,
     });
-    
+
     // Initialize MongoDB client once with connection pooling
     this.mongoClient = new MongoClient(env.MONGO_URI, {
       maxPoolSize: 10, // Maximum connections in the pool
-      minPoolSize: 2,  // Minimum connections to maintain
+      minPoolSize: 2, // Minimum connections to maintain
       maxIdleTimeMS: 30000, // Close idle connections after 30s
     });
-    
+
     // Initialize checkpointer with the pooled client
     this.checkpointer = new MongoDBSaver({ client: this.mongoClient });
   }
@@ -66,8 +52,6 @@ export class LlmService implements ILlmService {
 
   async getChatHistory(address: string): Promise<any> {
     try {
-     
-
       const chat = await this.initChat(address);
       if (!chat) throw new Error("Chat session not initialized");
 
@@ -76,57 +60,69 @@ export class LlmService implements ILlmService {
       });
 
       const state = initialState?.values?.messages;
-      const messages = state
-       
-        .map((message) => {
-          if (message.constructor.name === "ToolMessage") {
-            // Parse tool content and include status if available
-            try {
-              const parsedContent = JSON.parse(message.content);
-              
-              // Extract tool_output from the parsed content
-              let toolOutput = parsedContent.tool_output || parsedContent.result?.tool_output;
-              
-              // Extract display text from content array if it exists
-              let displayText = "";
-              if (parsedContent.content && Array.isArray(parsedContent.content)) {
-                const textItem = parsedContent.content.find((item: any) => item.type === 'text');
-                displayText = textItem ? textItem.text : JSON.stringify(parsedContent.content);
-              } else if (parsedContent.result?.content) {
-                displayText = typeof parsedContent.result.content === 'string' 
-                  ? parsedContent.result.content 
+      fs.writeFileSync("debug5.json", JSON.stringify(state, null, 2));
+      const messages = state.map((message) => {
+        if (message.constructor.name === "ToolMessage") {
+          const test = JSON.stringify(message);
+          fs.writeFileSync("debug4.json", JSON.stringify(message, null, 2));
+          // Parse tool content and include status if available
+          try {
+            const parsedContent = JSON.parse(message.content);
+            console.log("kwargs", message?.kwargs);
+            console.log("megamind", message?.name);
+            console.log("this is parsed tool output", JSON.stringify(message));
+            // Extract tool_output from the parsed content
+            let toolOutput =
+              parsedContent.tool_output || parsedContent.result?.tool_output;
+
+            // Extract display text from content array if it exists
+            let displayText = "";
+            if (parsedContent.content && Array.isArray(parsedContent.content)) {
+              const textItem = parsedContent.content.find(
+                (item: any) => item.type === "text"
+              );
+              displayText = textItem
+                ? textItem.text
+                : JSON.stringify(parsedContent.content);
+            } else if (parsedContent.result?.content) {
+              displayText =
+                typeof parsedContent.result.content === "string"
+                  ? parsedContent.result.content
                   : JSON.stringify(parsedContent.result.content);
-              } else {
-                displayText = JSON.stringify(parsedContent);
-              }
-
-              return {
-                type: message.constructor.name,
-                content: displayText,
-                status: parsedContent.status || "unexecuted",
-                hash: parsedContent.hash,
-                toolName: message.name || message.tool_call_id || parsedContent.toolName,
-                timestamp: parsedContent.timestamp || new Date().toISOString(),
-                tool_output: toolOutput,
-              };
-            } catch (parseError) {
-              console.warn("Failed to parse tool message content:", parseError);
-              return {
-                type: message.constructor.name,
-                content: message.content,
-                status: "unexecuted",
-                timestamp: new Date().toISOString(),
-              };
+            } else {
+              displayText = JSON.stringify(parsedContent);
             }
+
+            return {
+              type: message.constructor.name,
+              content: displayText,
+              id: message.id, // Include the message ID
+              status: parsedContent.status || "unexecuted",
+              hash: parsedContent.hash,
+              toolName:
+                message.name || message.tool_call_id || parsedContent.toolName,
+              timestamp: parsedContent.timestamp || new Date().toISOString(),
+              tool_output: toolOutput,
+            };
+          } catch (parseError) {
+            console.warn("Failed to parse tool message content:", parseError);
+            return {
+              type: message.constructor.name,
+              content: message.content,
+              status: "unexecuted",
+              timestamp: new Date().toISOString(),
+            };
           }
+        }
 
-          return {
-            type: message.constructor.name,
-            content: message.content,
-            timestamp: new Date().toISOString(),
-          };
-        });
-
+        return {
+          type: message.constructor.name,
+          content: message.content,
+          id: message.id, // Include the message ID
+          timestamp: new Date().toISOString(),
+        };
+      });
+      fs.writeFileSync("debug2.json", JSON.stringify(messages));
       return messages;
     } catch (error) {
       console.error("Error getting chat history:", error);
@@ -171,15 +167,21 @@ export class LlmService implements ILlmService {
             return null;
           }
         })
-        .filter(item => item !== null)
-        .find(item => {
-          const toolOutput = item!.parsed.tool_output || 
-            (item!.parsed.result && typeof item!.parsed.result === 'object' ? item!.parsed.result.tool_output : undefined);
+        .filter((item) => item !== null)
+        .find((item) => {
+          const toolOutput =
+            item!.parsed.tool_output ||
+            (item!.parsed.result && typeof item!.parsed.result === "object"
+              ? item!.parsed.result.tool_output
+              : undefined);
           return toolOutput && toolOutput.id === toolId;
         })?.index;
 
       if (targetToolMessageIndex === undefined) {
-        console.log(`No tool message found with ID ${toolId} for address:`, address);
+        console.log(
+          `No tool message found with ID ${toolId} for address:`,
+          address
+        );
         return false;
       }
 
@@ -207,7 +209,11 @@ export class LlmService implements ILlmService {
 
         await this.checkpointer.put(threadConfig, checkpointData, metadata);
 
-        console.log(`Updated tool status to ${status}${hash ? ` with hash ${hash}` : ''} for tool ID ${toolId} in address ${address}`);
+        console.log(
+          `Updated tool status to ${status}${
+            hash ? ` with hash ${hash}` : ""
+          } for tool ID ${toolId} in address ${address}`
+        );
         return true;
       } catch (parseError) {
         console.error("Failed to parse tool message content:", parseError);
@@ -219,9 +225,130 @@ export class LlmService implements ILlmService {
     }
   }
 
+  /**
+   * Update a specific message by its LangChain message ID
+   * This updates the message in the checkpoint and adds execution state
+   */
+  async updateMessageById(
+    address: string,
+    messageId: string,
+    executionState: "completed" | "pending" | "failed",
+    additionalData?: Record<string, any>
+  ): Promise<boolean> {
+    try {
+      // Get the chat agent (same way as getChatHistory)
+      const chat = await this.initChat(address);
+      if (!chat) {
+        console.log("Chat session not initialized");
+        return false;
+      }
+
+      // Get current state
+      const currentState = await chat.getState({
+        configurable: { thread_id: address },
+      });
+
+      if (!currentState?.values?.messages) {
+        console.log("No messages found for address:", address);
+        return false;
+      }
+
+      const messages = currentState.values.messages;
+
+      // Find the message by ID (live objects have direct .id property)
+      const targetMessageIndex = messages.findIndex(
+        (msg: any) => msg.id === messageId
+      );
+
+      if (targetMessageIndex === -1) {
+        console.log(
+          `No message found with ID ${messageId} for address:`,
+          address
+        );
+        console.log(
+          "Available message IDs:",
+          messages.map((m: any) => m.id).filter(Boolean)
+        );
+        return false;
+      }
+
+      const targetMessage = messages[targetMessageIndex];
+      const messageType = targetMessage.constructor.name;
+
+      console.log(`Found message with ID ${messageId}, type: ${messageType}`);
+
+      // Update based on message type
+      if (messageType === "ToolMessage") {
+        // Parse and update tool message content
+        try {
+          const parsedContent = JSON.parse(targetMessage.content);
+
+          // Add execution state to the content
+          parsedContent.executionState = executionState;
+          parsedContent.updatedAt = new Date().toISOString();
+
+          // Add any additional data
+          if (additionalData) {
+            Object.assign(parsedContent, additionalData);
+          }
+
+          // Update the content
+          targetMessage.content = JSON.stringify(parsedContent);
+
+          console.log(
+            `Updated ToolMessage ${messageId} with execution state: ${executionState}`
+          );
+        } catch (parseError) {
+          console.error("Failed to parse tool message content:", parseError);
+          return false;
+        }
+      } else if (
+        messageType === "AIMessageChunk" ||
+        messageType === "AIMessage"
+      ) {
+        // For AI messages, add metadata to additional_kwargs
+        if (!targetMessage.additional_kwargs) {
+          targetMessage.additional_kwargs = {};
+        }
+
+        targetMessage.additional_kwargs.executionState = executionState;
+        targetMessage.additional_kwargs.updatedAt = new Date().toISOString();
+
+        if (additionalData) {
+          Object.assign(targetMessage.additional_kwargs, additionalData);
+        }
+
+        console.log(
+          `Updated AIMessage ${messageId} with execution state: ${executionState}`
+        );
+      } else {
+        console.log(
+          `Unsupported message type: ${messageType} for ID ${messageId}`
+        );
+        return false;
+      }
+
+      // Update the state back to the graph
+      await chat.updateState(
+        { configurable: { thread_id: address } },
+        { messages: messages }
+      );
+
+      console.log(
+        `Successfully updated message ${messageId} to ${executionState} for address ${address}`
+      );
+      return true;
+    } catch (error) {
+      console.error("Error updating message by ID:", error);
+      return false;
+    }
+  }
+
   async abortLatestTool(address: string): Promise<boolean> {
     // This method is deprecated - use updateToolStatus with specific toolId instead
-    console.warn("abortLatestTool is deprecated. Use updateToolStatus with specific toolId.");
+    console.warn(
+      "abortLatestTool is deprecated. Use updateToolStatus with specific toolId."
+    );
     return false;
   }
 
@@ -242,18 +369,22 @@ export class LlmService implements ILlmService {
   async initChat(address: string): Promise<any> {
     const convertedLangGraphTools = toolsList;
     let langGraphTools: StructuredTool[] = convertedLangGraphTools;
-    
+
     // Use the pooled checkpointer
     const agent = createReactAgent({
       llm: this.genAI,
       tools: langGraphTools,
-      stateModifier: systemPrompt(address),
+      stateModifier: getSystemPrompt(address),
       checkpointSaver: this.checkpointer,
     });
     return agent;
   }
 
-  async *streamMessage(prompt: string, address: string, abortSignal?: AbortSignal): AsyncGenerator<LlmStreamChunk> {
+  async *streamMessage(
+    prompt: string,
+    address: string,
+    abortSignal?: AbortSignal
+  ): AsyncGenerator<LlmStreamChunk> {
     const chat = await this.initChat(address);
 
     if (!chat) {
@@ -272,94 +403,87 @@ export class LlmService implements ILlmService {
       // Handle streaming text chunks from the model
       if (event.event === "on_chat_model_stream") {
         const chunk = event.data?.chunk;
-        
+
         // The chunk is an AIMessageChunk with content property
-        if (chunk && chunk.content && typeof chunk.content === "string") {
-          yield { type: "token", text: chunk.content } as LlmStreamChunk;
+        if (chunk && chunk.text && typeof chunk.text === "string") {
+          yield { type: "token", text: chunk.text } as LlmStreamChunk;
         }
       }
       // Handle tool execution completion
       else if (event.event === "on_tool_end") {
         const output = event.data?.output;
-        
+
         // Skip if we've already processed this tool call
         const toolCallId = output?.tool_call_id;
-        
+
         if (toolCallId && seenToolCalls.has(toolCallId)) {
           continue;
         }
+
         if (toolCallId) {
           seenToolCalls.add(toolCallId);
         }
 
-        const toolName = output?.name || event.name || "unknown";
-        
+        const toolName = output?.name || "unknown";
+
         let toolContent = "";
-        let toolOutput: any = null;
+        let toolOutput: any[] = [];
 
         // Extract content from the tool output
-        if (output && typeof output === 'object') {
+        if (output && typeof output === "object") {
           const rawContent = output.content;
-          
-          toolContent = typeof rawContent === "string" 
-            ? rawContent 
-            : JSON.stringify(rawContent);
-          
+
+          toolContent =
+            typeof rawContent === "string"
+              ? rawContent
+              : JSON.stringify(rawContent);
+
           // Try to parse the content JSON
           try {
             const parsed = JSON.parse(toolContent);
+            // Extract executionId if present
             
             // Check if it has tool_output field (our custom format)
             if (parsed.tool_output) {
-              toolOutput = parsed.tool_output;
-            } 
-            // Check if it has nested content array (MCP format)
-            else if (parsed.content && Array.isArray(parsed.content)) {
-              const textItem = parsed.content.find((item: any) => item.type === 'text');
-              if (textItem && textItem.text) {
-                // Try to parse the nested text as JSON
-                try {
-                  toolOutput = JSON.parse(textItem.text);
-                } catch {
-                  toolOutput = { data: textItem.text };
-                }
-              } else {
-                toolOutput = parsed;
-              }
-            } else {
-              // Otherwise use the parsed content as tool_output
-              toolOutput = parsed;
+              toolOutput = this.normalizeToolOutputs(
+                parsed.tool_output,
+                toolIndex
+              );
             }
+
+            
+            if (!toolOutput.length) {
+              const fallbackContent = this.safeJsonParse(toolContent);
+              toolOutput = this.normalizeToolOutputs(
+                fallbackContent,
+                toolIndex
+              );
+            }
+            
+            if (!toolOutput.length) {
+              continue;
+            }
+            const outputDir = path.resolve(process.cwd(), "test", "output");
+            mkdirSync(outputDir, { recursive: true });
+            writeFileSync(
+              path.join(outputDir, "llm-output.json"),
+              JSON.stringify(output, null, 2)
+            );
+            
+            yield {
+              type: "tool",
+              toolName,
+              content: toolContent,
+              tool_output: toolOutput,
+            } as LlmStreamChunk;
+
+            toolIndex += toolOutput.length;
           } catch {
             // If parsing fails, treat content as plain text
-            toolOutput = { content: toolContent };
           }
-        } else if (typeof output === 'string') {
-          toolContent = output;
-          try {
-            toolOutput = JSON.parse(output);
-          } catch {
-            toolOutput = { content: output };
-          }
-        } else {
-          // Fallback: stringify whatever we got
-          toolContent = JSON.stringify(output);
-          toolOutput = output;
         }
 
         // Add ID if not present
-        if (toolOutput && typeof toolOutput === "object" && !toolOutput.id) {
-          toolOutput.id = toolIndex;
-        }
-
-        yield {
-          type: "tool",
-          toolName,
-          content: toolContent,
-          tool_output: toolOutput,
-        } as LlmStreamChunk;
-
-        toolIndex++;
       }
     }
   }
@@ -401,53 +525,67 @@ export class LlmService implements ILlmService {
           try {
             // Parse the JSON string content
             const parsed = JSON.parse(msg.content);
-            console.log('hard luck', parsed)
-            
-            if (parsed && typeof parsed === 'object') {
+            console.log("hard luck", parsed);
+
+            if (parsed && typeof parsed === "object") {
               // MCP tool response structure
               const mcpResponse = parsed;
-              let content = '';
-              
+              let content = "";
+
               // Extract text from content array
-              if (mcpResponse && typeof mcpResponse === 'object' && mcpResponse.content && Array.isArray(mcpResponse.content) && mcpResponse.content.length > 0) {
-                const textItem = mcpResponse.content.find((item: any) => item.type === 'text');
-                content = textItem ? textItem.text : JSON.stringify(mcpResponse.content);
+              if (
+                mcpResponse &&
+                typeof mcpResponse === "object" &&
+                mcpResponse.content &&
+                Array.isArray(mcpResponse.content) &&
+                mcpResponse.content.length > 0
+              ) {
+                const textItem = mcpResponse.content.find(
+                  (item: any) => item.type === "text"
+                );
+                content = textItem
+                  ? textItem.text
+                  : JSON.stringify(mcpResponse.content);
               } else {
                 content = JSON.stringify(mcpResponse);
               }
-              
+
               // Extract tool_output and add ID
-              const toolOutput = parsed.tool_output || (mcpResponse && typeof mcpResponse === 'object' ? mcpResponse.tool_output : undefined);
-              if (toolOutput && typeof toolOutput === 'object') {
+              const toolOutput =
+                parsed.tool_output ||
+                (mcpResponse && typeof mcpResponse === "object"
+                  ? mcpResponse.tool_output
+                  : undefined);
+              if (toolOutput && typeof toolOutput === "object") {
                 toolOutput.id = toolIndex;
               }
 
-              if(toolOutput?.transaction || JSON.parse(content)?.transaction){
+              if (toolOutput?.transaction || JSON.parse(content)?.transaction) {
                 return {
-                id: toolIndex,
-                content: content,
-                tool_output: toolOutput ? toolOutput : JSON.parse(content)
-              };
+                  id: toolIndex,
+                  content: content,
+                  tool_output: toolOutput ? toolOutput : JSON.parse(content),
+                };
               }
               return {
                 id: toolIndex,
                 content: content,
-                tool_output: undefined
+                tool_output: undefined,
               };
             } else {
               // Fallback
               return {
                 id: toolIndex,
-                content: msg.content || '',
-                tool_output: undefined
+                content: msg.content || "",
+                tool_output: undefined,
               };
             }
           } catch (error) {
             // If parsing fails, return as-is
             return {
               id: toolIndex,
-              content: msg.content || '',
-              tool_output: undefined
+              content: msg.content || "",
+              tool_output: undefined,
             };
           }
         })
@@ -461,4 +599,33 @@ export class LlmService implements ILlmService {
     return res;
   }
 
+  private normalizeToolOutputs(rawOutput: any, startIndex: number): any[] {
+    if (!rawOutput) {
+      return [];
+    }
+
+    const outputArray = Array.isArray(rawOutput) ? rawOutput : [rawOutput];
+
+    return outputArray
+      .map((item, idx) => {
+        if (item && typeof item === "object") {
+          return {
+            ...item,
+            id: item.id ?? startIndex + idx,
+          };
+        }
+        return undefined;
+      })
+      .filter((item): item is Record<string, any> =>
+        Boolean(item && typeof item === "object" && item.transaction)
+      );
+  }
+
+  private safeJsonParse<T = unknown>(value: string): T | undefined {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return undefined;
+    }
+  }
 }
