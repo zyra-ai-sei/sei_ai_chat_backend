@@ -6,9 +6,7 @@ import { getTransactionTool } from "../tools/langGraphTools";
 
 @injectable()
 export class TransactionService {
-  constructor(
-    @inject(TYPES.UserService) private userService: UserService
-  ) {}
+  constructor(@inject(TYPES.UserService) private userService: UserService) {}
 
   async addTransaction(
     address: string,
@@ -16,11 +14,18 @@ export class TransactionService {
   ): Promise<{ data: Transaction }> {
     try {
       // Ensure MCP connection
-      console.log("Fetching transaction info for hash:", txHash);
       // Call get_transaction tool directly
       const toolResult = await getTransactionTool.call({ txHash });
-      console.log("Tool result:", toolResult);
-      const text = toolResult?.content?.[0]?.text ?? "";
+
+      let text = "";
+      if (typeof toolResult === "string") {
+        text = toolResult;
+      } else if (toolResult?.content && Array.isArray(toolResult.content)) {
+        text = toolResult.content[0]?.text ?? "";
+      } else if (toolResult?.text) {
+        text = toolResult.text;
+      }
+
       console.log("Parsed tool output:", text);
       const txObject = JSON.parse(text);
       if (txObject) {
@@ -36,7 +41,6 @@ export class TransactionService {
           input: txObject?.input,
           blockNumber: txObject?.blockNumber,
         });
-        console.log("this is transaction data", response);
         return {
           data: response,
         };

@@ -11,8 +11,13 @@ export interface ILlmService {
     initChat(address: string): Promise<void>;
     getChatHistory(address: string): Promise<any>;
     clearChat(address: string): Promise<void>;
-    sendMessage(prompt: string, address: string): Promise<string | object>;
-    streamMessage(prompt: string, address: string, abortSignal?: AbortSignal): AsyncGenerator<LlmStreamChunk>;
+    sendMessage(prompt: string, address: string, messageType?: "human" | "system"): Promise<string | object>;
+    streamMessage(
+        prompt: string, 
+        address: string, 
+        abortSignal?: AbortSignal,
+        messageType?: "human" | "system"
+    ): AsyncGenerator<LlmStreamChunk>;
     updateToolStatus(
         address: string,
         toolId: number,
@@ -21,9 +26,9 @@ export interface ILlmService {
     ): Promise<boolean>;
     updateMessageById(
         address: string,
-        messageId: string,
+        executionId: string,
         executionState: "completed" | "pending" | "failed",
-        additionalData?: Record<string, any>
+        txnHash?: string
     ): Promise<boolean>;
     abortLatestTool(address: string): Promise<boolean>;
 }

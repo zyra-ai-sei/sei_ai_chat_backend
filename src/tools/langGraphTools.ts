@@ -1089,7 +1089,7 @@ export const getPriceOfTokenTool = langchainTools.tool(
   }) => {
     try {
       const price = await services.getPriceForToken(token, network);
-
+      console.log('this is price')
       return {
         text: JSON.stringify({ token, price, network }, null, 2),
       };
@@ -1190,7 +1190,7 @@ export const createOrderTool = langchainTools.tool(
     description:
       'Place limit order or market order for a pair of tokens. This creates an unsigned transaction that can be signed by the user. For deadline, you can enter durations like "1 week", "3 days", or an exact date like "3 August 2025" or if its something informal like 3rd aug 25 then convert it in standard format like 3 August 2025 before feeding to the tool.The tool has Helper to parse duration or date string to timestamp. approve_erc20 needs to be called before this tool to ensure sufficient allowance for the src token. If the from or to token is a native token (sei) then it needs to be wrapped or unwrapped to wsei accordingly using appropriate tool in the MCP.',
     schema: z.object({
-      amount: z.string().describe("The src Amount user wants to swap for"),
+      amount: z.string().describe("The src Amount user wants to swap for, imp: its human readeable amount"),
       destTokenAddress: z
         .string()
         .describe("The token address which the user wants to swap for"),

@@ -24,9 +24,10 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest
   ): Promise<string | object> {
-    const { prompt } = req.body;
+    const { prompt, messageType } = req.body;
     const address = req.userAddress
-    return this.llmService.sendMessage(prompt, address);
+    const type = (messageType === "human" || messageType === "system") ? messageType : "human";
+    return this.llmService.sendMessage(prompt, address, type);
   }
 
   @httpGet("/stream")
@@ -36,6 +37,11 @@ export class LlmController {
   ): Promise<void> {
     const promptParam = req.query.prompt;
     const prompt = Array.isArray(promptParam) ? promptParam.join(" ") : promptParam;
+    
+    const messageTypeParam = req.query.messageType;
+    const messageType = (typeof messageTypeParam === "string" && (messageTypeParam === "human" || messageTypeParam === "system")) 
+      ? messageTypeParam 
+      : "human";
 
     if (typeof prompt !== "string" || !prompt.trim()) {
       res.status(400).json({ success: false, message: "prompt query parameter is required" });
@@ -57,7 +63,7 @@ export class LlmController {
     req.on("close", handleClose);
 
     try {
-      for await (const chunk of this.llmService.streamMessage(prompt, address)) {
+      for await (const chunk of this.llmService.streamMessage(prompt, address, undefined, messageType)) {
         if (closed) {
           break;
         }
@@ -124,10 +130,10 @@ export class LlmController {
     req: AuthenticatedRequest
   ): Promise<{ success: boolean; message?: string }> {
     const address = req.userAddress;
-    const { messageId, executionState, additionalData } = req.body;
+    const { executionId, executionState, txnHash } = req.body;
     
-    if (!messageId || !executionState) {
-      return { success: false, message: "Missing messageId or executionState" };
+    if (!executionId || !executionState) {
+      return { success: false, message: "Missing executionId or executionState" };
     }
     
     if (!["completed", "pending", "failed"].includes(executionState)) {
@@ -136,9 +142,9 @@ export class LlmController {
     
     const success = await this.llmService.updateMessageById(
       address, 
-      messageId, 
+      executionId, 
       executionState,
-      additionalData
+      txnHash
     );
     
     return { success, message: success ? "Message updated successfully" : "Failed to update message" };

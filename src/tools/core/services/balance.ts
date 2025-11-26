@@ -305,7 +305,7 @@ export async function getPriceForToken(token: string, network=DEFAULT_NETWORK){
   let targetDenom = ""
   for(let i = 0; i<availableTokens.length; i++){
     const availableToken = availableTokens[i];
-    if(token.includes(availableToken)){
+    if(String(token).toLowerCase().includes(availableToken)){
       targetDenom = "u"+availableToken;
       break;
     }

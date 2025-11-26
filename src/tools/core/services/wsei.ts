@@ -23,10 +23,26 @@ export function buildDepositSEITx(
   const publicClient = getPublicClient(network);
   const rawAmount = parseEther(amount);
   
-  return {
+  const txRequest = {
     to: WSEI_CONTRACT_ADDRESS,
     value: rawAmount.toString(),
     data: '0xd0e30db0', // deposit() function selector
+  };
+
+  return {
+    transaction: txRequest,
+    metadata: {
+      types: {
+        to: "address",
+        value: "uint256",
+        data: "bytes"
+      },
+      token: {
+        symbol: "SEI",
+        decimals: 18,
+        formattedAmount: amount
+      }
+    },
     executionId: randomUUID()
   };
 }
@@ -59,9 +75,24 @@ export function buildWithdrawSEITx(
     args: [rawAmount]
   });
   
-  return {
+  const txRequest = {
     to: WSEI_CONTRACT_ADDRESS,
-    data: data,
+    data: data
+  };
+
+  return {
+    transaction: txRequest,
+    metadata: {
+      types: {
+        to: "address",
+        data: "bytes"
+      },
+      token: {
+        symbol: "wSEI",
+        decimals: 18,
+        formattedAmount: amount
+      }
+    },
     executionId: randomUUID()
   };
 }

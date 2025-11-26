@@ -8,7 +8,7 @@ import { UserService } from "./UserService";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { HumanMessage } from "@langchain/core/messages";
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
@@ -59,18 +59,19 @@ export class LlmService implements ILlmService {
         configurable: { thread_id: address },
       });
 
-      const state = initialState?.values?.messages;
-      fs.writeFileSync("debug5.json", JSON.stringify(state, null, 2));
-      const messages = state.map((message) => {
+      const state = initialState?.values?.messages || [];
+      const messages = state
+        .filter((message: any) => {
+          if (message.constructor.name === "SystemMessage") return false;
+          if (message.constructor.name === "HumanMessage" && message.additional_kwargs?.type === "system") return false;
+          return true;
+        })
+        .map((message: any) => {
         if (message.constructor.name === "ToolMessage") {
           const test = JSON.stringify(message);
-          fs.writeFileSync("debug4.json", JSON.stringify(message, null, 2));
           // Parse tool content and include status if available
           try {
             const parsedContent = JSON.parse(message.content);
-            console.log("kwargs", message?.kwargs);
-            console.log("megamind", message?.name);
-            console.log("this is parsed tool output", JSON.stringify(message));
             // Extract tool_output from the parsed content
             let toolOutput =
               parsedContent.tool_output || parsedContent.result?.tool_output;
@@ -92,6 +93,8 @@ export class LlmService implements ILlmService {
             } else {
               displayText = JSON.stringify(parsedContent);
             }
+
+            
 
             return {
               type: message.constructor.name,
@@ -122,7 +125,6 @@ export class LlmService implements ILlmService {
           timestamp: new Date().toISOString(),
         };
       });
-      fs.writeFileSync("debug2.json", JSON.stringify(messages));
       return messages;
     } catch (error) {
       console.error("Error getting chat history:", error);
@@ -130,116 +132,19 @@ export class LlmService implements ILlmService {
     }
   }
 
-  async updateToolStatus(
-    address: string,
-    toolId: number,
-    status: "completed" | "aborted" | "unexecuted",
-    hash?: string
-  ): Promise<boolean> {
-    try {
-      // Get current checkpoint using pooled checkpointer
-      const threadConfig = { configurable: { thread_id: address } };
-      const currentCheckpoint = await this.checkpointer.getTuple(threadConfig);
-
-      if (!currentCheckpoint?.checkpoint) {
-        console.log("No checkpoint found for address:", address);
-        return false;
-      }
-
-      // Access the checkpoint data correctly
-      const checkpointData = currentCheckpoint.checkpoint as any;
-      if (!checkpointData.values?.messages) {
-        console.log("No messages found in checkpoint");
-        return false;
-      }
-
-      const messages = checkpointData.values.messages;
-
-      // Find the ToolMessage with the matching toolId
-      const targetToolMessageIndex = messages
-        .map((msg: any, index: number) => ({ msg, index }))
-        .filter(({ msg }: any) => msg.constructor.name === "ToolMessage")
-        .map(({ msg, index }) => {
-          try {
-            const parsed = JSON.parse(msg.content);
-            return { parsed, index };
-          } catch {
-            return null;
-          }
-        })
-        .filter((item) => item !== null)
-        .find((item) => {
-          const toolOutput =
-            item!.parsed.tool_output ||
-            (item!.parsed.result && typeof item!.parsed.result === "object"
-              ? item!.parsed.result.tool_output
-              : undefined);
-          return toolOutput && toolOutput.id === toolId;
-        })?.index;
-
-      if (targetToolMessageIndex === undefined) {
-        console.log(
-          `No tool message found with ID ${toolId} for address:`,
-          address
-        );
-        return false;
-      }
-
-      // Update the tool message content with status
-      const toolMessage = messages[targetToolMessageIndex];
-      try {
-        const parsedContent = JSON.parse(toolMessage.content);
-
-        // Add or update status, hash, and timestamp
-        parsedContent.status = status;
-        if (hash) {
-          parsedContent.hash = hash;
-        }
-        parsedContent.updatedAt = new Date().toISOString();
-
-        // Update the message content
-        toolMessage.content = JSON.stringify(parsedContent);
-
-        // Save the updated checkpoint with proper metadata
-        const metadata = {
-          source: "update" as const,
-          step: (currentCheckpoint.metadata?.step || 0) + 1,
-          parents: currentCheckpoint.metadata?.parents || {},
-        };
-
-        await this.checkpointer.put(threadConfig, checkpointData, metadata);
-
-        console.log(
-          `Updated tool status to ${status}${
-            hash ? ` with hash ${hash}` : ""
-          } for tool ID ${toolId} in address ${address}`
-        );
-        return true;
-      } catch (parseError) {
-        console.error("Failed to parse tool message content:", parseError);
-        return false;
-      }
-    } catch (error) {
-      console.error("Error updating tool status:", error);
-      return false;
-    }
-  }
-
   /**
-   * Update a specific message by its LangChain message ID
-   * This updates the message in the checkpoint and adds execution state
+   * Update a specific message by its execution ID in tool_output
    */
   async updateMessageById(
     address: string,
-    messageId: string,
+    executionId: string,
     executionState: "completed" | "pending" | "failed",
-    additionalData?: Record<string, any>
+    txnHash?: string
   ): Promise<boolean> {
     try {
       // Get the chat agent (same way as getChatHistory)
       const chat = await this.initChat(address);
       if (!chat) {
-        console.log("Chat session not initialized");
         return false;
       }
 
@@ -249,82 +154,64 @@ export class LlmService implements ILlmService {
       });
 
       if (!currentState?.values?.messages) {
-        console.log("No messages found for address:", address);
         return false;
       }
 
       const messages = currentState.values.messages;
+      let messageUpdated = false;
 
-      // Find the message by ID (live objects have direct .id property)
-      const targetMessageIndex = messages.findIndex(
-        (msg: any) => msg.id === messageId
-      );
+      // Iterate through messages to find the one with the matching executionId
+      for (const message of messages) {
+        if (message.constructor.name === "ToolMessage") {
+          try {
+            const parsedContent = JSON.parse(message.content);
+            
+            // Check if tool_output exists and is an array
+            if (parsedContent.tool_output && Array.isArray(parsedContent.tool_output)) {
+              const toolOutputs = parsedContent.tool_output;
+              
+              // Find the output with the matching executionId
+              const outputIndex = toolOutputs.findIndex((output: any) => output.executionId === executionId);
+              
+              if (outputIndex !== -1) {
+                // Update the specific output
+                const output = toolOutputs[outputIndex];
+                
+                // Reconstruct object to place new fields after executionId
+                const newOutput: any = {};
+                for (const key of Object.keys(output)) {
+                  newOutput[key] = output[key];
+                  if (key === 'executionId') {
+                    newOutput.executionStatus = executionState;
+                    if (txnHash) {
+                      newOutput.txnHash = txnHash;
+                    }
+                  }
+                }
+                
+                // Ensure fields are added if executionId wasn't the key (though it should be)
+                if (!newOutput.executionStatus) {
+                   newOutput.executionStatus = executionState;
+                   if (txnHash) newOutput.txnHash = txnHash;
+                }
 
-      if (targetMessageIndex === -1) {
-        console.log(
-          `No message found with ID ${messageId} for address:`,
-          address
-        );
-        console.log(
-          "Available message IDs:",
-          messages.map((m: any) => m.id).filter(Boolean)
-        );
-        return false;
+                toolOutputs[outputIndex] = newOutput;
+                
+                // Update the message content
+                message.content = JSON.stringify(parsedContent);
+                messageUpdated = true;
+                break; // Stop searching after finding the match
+              }
+            }
+          } catch (parseError) {
+            // Ignore parsing errors for non-JSON content
+            continue;
+          }
+        }
       }
 
-      const targetMessage = messages[targetMessageIndex];
-      const messageType = targetMessage.constructor.name;
-
-      console.log(`Found message with ID ${messageId}, type: ${messageType}`);
-
-      // Update based on message type
-      if (messageType === "ToolMessage") {
-        // Parse and update tool message content
-        try {
-          const parsedContent = JSON.parse(targetMessage.content);
-
-          // Add execution state to the content
-          parsedContent.executionState = executionState;
-          parsedContent.updatedAt = new Date().toISOString();
-
-          // Add any additional data
-          if (additionalData) {
-            Object.assign(parsedContent, additionalData);
-          }
-
-          // Update the content
-          targetMessage.content = JSON.stringify(parsedContent);
-
-          console.log(
-            `Updated ToolMessage ${messageId} with execution state: ${executionState}`
-          );
-        } catch (parseError) {
-          console.error("Failed to parse tool message content:", parseError);
-          return false;
-        }
-      } else if (
-        messageType === "AIMessageChunk" ||
-        messageType === "AIMessage"
-      ) {
-        // For AI messages, add metadata to additional_kwargs
-        if (!targetMessage.additional_kwargs) {
-          targetMessage.additional_kwargs = {};
-        }
-
-        targetMessage.additional_kwargs.executionState = executionState;
-        targetMessage.additional_kwargs.updatedAt = new Date().toISOString();
-
-        if (additionalData) {
-          Object.assign(targetMessage.additional_kwargs, additionalData);
-        }
-
-        console.log(
-          `Updated AIMessage ${messageId} with execution state: ${executionState}`
-        );
-      } else {
-        console.log(
-          `Unsupported message type: ${messageType} for ID ${messageId}`
-        );
+      if (!messageUpdated) {
+        console.log(`No tool output found with executionId ${executionId} for address: ${address}`);
         return false;
       }
 
@@ -335,21 +222,13 @@ export class LlmService implements ILlmService {
       );
 
       console.log(
-        `Successfully updated message ${messageId} to ${executionState} for address ${address}`
+        `Successfully updated executionId ${executionId} to ${executionState} for address ${address}`
       );
       return true;
     } catch (error) {
-      console.error("Error updating message by ID:", error);
+      console.error("Error updating message by execution ID:", error);
       return false;
     }
-  }
-
-  async abortLatestTool(address: string): Promise<boolean> {
-    // This method is deprecated - use updateToolStatus with specific toolId instead
-    console.warn(
-      "abortLatestTool is deprecated. Use updateToolStatus with specific toolId."
-    );
-    return false;
   }
 
   /**
@@ -362,6 +241,71 @@ export class LlmService implements ILlmService {
       console.log("MongoDB connection pool closed");
     } catch (error) {
       console.error("Error closing MongoDB connection pool:", error);
+    }
+  }
+
+  private async sanitizeHistory(address: string): Promise<void> {
+    try {
+      const config = { configurable: { thread_id: address } };
+      const checkpointTuple = await this.checkpointer.getTuple(config);
+
+      if (!checkpointTuple?.checkpoint) return;
+
+      const checkpoint = checkpointTuple.checkpoint;
+      const messages = checkpoint.channel_values?.messages;
+
+      if (!Array.isArray(messages)) return;
+
+      let hasChanges = false;
+      const sanitizedMessages = messages.map((msg: any) => {
+        // Check for SystemMessage (either by class name or type property)
+        const isSystemMessage = 
+          msg.constructor.name === "SystemMessage" || 
+          msg.type === "system" || 
+          (msg.lc_id && msg.lc_id.includes("SystemMessage"));
+
+        if (isSystemMessage) {
+          hasChanges = true;
+          // Convert to HumanMessage with system type flag
+          // We need to preserve the ID and content
+          return new HumanMessage({
+            content: msg.content,
+            additional_kwargs: { ...msg.additional_kwargs, type: "system" },
+            id: msg.id,
+            name: msg.name
+          });
+        }
+        return msg;
+      });
+
+      if (hasChanges) {
+        const newCheckpoint = {
+          ...checkpoint,
+          channel_values: {
+            ...checkpoint.channel_values,
+            messages: sanitizedMessages
+          }
+        };
+        
+        // We need to provide newVersions, but since we are just modifying existing messages in place
+        // without changing the structure significantly, we might be able to reuse existing versions or pass empty.
+        // However, LangGraph might expect versions. 
+        // For safety, we can try to pass the existing versions if available, or empty object.
+        // The put method signature: put(config, checkpoint, metadata, newVersions)
+        
+        // We'll use the parent config from the tuple if available, or the config we created
+        const writeConfig = checkpointTuple.config || config;
+        
+        await this.checkpointer.put(
+          writeConfig, 
+          newCheckpoint, 
+          checkpointTuple.metadata, 
+          {} // newVersions - passing empty object as we are patching
+        );
+      }
+    } catch (error) {
+      console.error("Error sanitizing history:", error);
+      // Don't throw, just log, so we don't block execution if this fails
     }
   }
 
@@ -383,16 +327,22 @@ export class LlmService implements ILlmService {
   async *streamMessage(
     prompt: string,
     address: string,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    messageType: "human" | "system" = "human"
   ): AsyncGenerator<LlmStreamChunk> {
+    await this.sanitizeHistory(address);
     const chat = await this.initChat(address);
 
     if (!chat) {
       throw new Error("Chat session not initialized");
     }
 
+    const message = messageType === "system" 
+      ? new HumanMessage({ content: prompt, additional_kwargs: { type: "system" } }) 
+      : new HumanMessage(prompt);
+
     const stream = chat.streamEvents(
-      { messages: [new HumanMessage(prompt)] },
+      { messages: [message] },
       { configurable: { thread_id: address }, version: "v2" }
     );
 
@@ -489,11 +439,12 @@ export class LlmService implements ILlmService {
   }
 
   // Send a prompt to an existing chat session
-  async sendMessage(prompt: string, address: string): Promise<string | object> {
+  async sendMessage(prompt: string, address: string, messageType: "human" | "system" = "human"): Promise<string | object> {
     // if (!this.mcpService.isConnected()) {
     //   await this.mcpService.connectToMCP();
     // }
     //only initialize if needed
+    await this.sanitizeHistory(address);
     const chat = await this.initChat(address);
 
     if (!chat) throw new Error("Chat session not initialized");
@@ -504,18 +455,18 @@ export class LlmService implements ILlmService {
     console.log("hi");
     console.dir(initialState);
 
+    const message = messageType === "system" 
+      ? new HumanMessage({ content: prompt, additional_kwargs: { type: "system" } }) 
+      : new HumanMessage(prompt);
+
     const agentFinalState = await chat.invoke(
-      { messages: [new HumanMessage(prompt)] }, // Use the actual prompt instead of hardcoded message
+      { messages: [message] }, // Use the actual prompt instead of hardcoded message
       { configurable: { thread_id: address } } // Use address as thread_id
     );
 
     const newMessages = initialState?.values?.messages
       ? agentFinalState.messages.slice(initialState.values.messages.length)
       : agentFinalState.messages;
-    console.log("Agent final state:");
-    console.dir(agentFinalState);
-    console.log("New messages:");
-    console.dir(newMessages);
 
     const res = {
       chat: newMessages[newMessages.length - 1].content,
@@ -525,7 +476,6 @@ export class LlmService implements ILlmService {
           try {
             // Parse the JSON string content
             const parsed = JSON.parse(msg.content);
-            console.log("hard luck", parsed);
 
             if (parsed && typeof parsed === "object") {
               // MCP tool response structure
@@ -591,11 +541,7 @@ export class LlmService implements ILlmService {
         })
         .filter((msg: any) => msg != null),
     };
-    console.log(
-      "Response from agent:",
-      res,
-      newMessages.filter((msg: any) => msg.constructor.name === "ToolMessage")
-    );
+    
     return res;
   }
 
