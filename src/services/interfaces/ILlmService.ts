@@ -18,17 +18,10 @@ export interface ILlmService {
         abortSignal?: AbortSignal,
         messageType?: "human" | "system"
     ): AsyncGenerator<LlmStreamChunk>;
-    updateToolStatus(
-        address: string,
-        toolId: number,
-        status: "completed" | "aborted" | "unexecuted",
-        hash?: string
-    ): Promise<boolean>;
     updateMessageById(
         address: string,
         executionId: string,
         executionState: "completed" | "pending" | "failed",
         txnHash?: string
     ): Promise<boolean>;
-    abortLatestTool(address: string): Promise<boolean>;
 }

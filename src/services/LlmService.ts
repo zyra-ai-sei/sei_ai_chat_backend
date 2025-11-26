@@ -300,7 +300,6 @@ export class LlmService implements ILlmService {
           writeConfig, 
           newCheckpoint, 
           checkpointTuple.metadata, 
-          {} // newVersions - passing empty object as we are patching
         );
       }
     } catch (error) {

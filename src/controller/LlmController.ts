@@ -96,34 +96,6 @@ export class LlmController {
     return this.llmService.getChatHistory(address);
   }
 
-  @httpPost("/completeTool")
-  private async completeTool(
-    @request()
-    req: AuthenticatedRequest
-  ): Promise<{ success: boolean }> {
-    const address = req.userAddress;
-    const { toolId, hash } = req.body;
-    if (toolId === undefined || toolId === null) {
-      return { success: false };
-    }
-    const success = await this.llmService.updateToolStatus(address, toolId, 'completed', hash);
-    return { success };
-  }
-
-  @httpPost("/abortTool")
-  private async abortTool(
-    @request()
-    req: AuthenticatedRequest
-  ): Promise<{ success: boolean }> {
-    const address = req.userAddress;
-    const { toolId } = req.body;
-    if (toolId === undefined || toolId === null) {
-      return { success: false };
-    }
-    const success = await this.llmService.updateToolStatus(address, toolId, 'aborted');
-    return { success };
-  }
-
   @httpPost("/updateMessageState")
   private async updateMessageState(
     @request()
