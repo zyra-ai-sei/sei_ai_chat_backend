@@ -12,7 +12,8 @@ const env = cleanEnv(process.env, {
     GEMINI_API_KEY: str(),
     LLAMA_API_KEY: str(),
     MONGO_URI: str(),
-    RPC_URL:str()
+    RPC_URL:str(),
+    COINGECKO_API_KEY: str({ default: '' })
 })
 
 

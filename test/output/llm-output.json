@@ -7,8 +7,8 @@
     "ToolMessage"
   ],
   "kwargs": {
-    "content": "{\n  \"text\": \"An unsigned SEI transfer transaction has been prepared. Please sign and send it using your wallet.\",\n  \"tool_output\": [\n    {\n      \"transaction\": {\n        \"to\": \"0xad7f82083455a3df324080af04cd9855b9f2d726\",\n        \"value\": \"500000000000000000\"\n      },\n      \"metadata\": {\n        \"types\": {\n          \"to\": \"address\",\n          \"value\": \"uint256\"\n        },\n        \"token\": {\n          \"symbol\": \"SEI\",\n          \"decimals\": 18,\n          \"formattedAmount\": \"0.5\"\n        }\n      },\n      \"executionId\": \"e8350032-bee9-415d-a178-bd108ecb3853\"\n    }\n  ]\n}",
-    "tool_call_id": "4dafd1d5-c3b3-4cd5-8be5-547f1cc2064a",
+    "content": "{\n  \"text\": \"An unsigned SEI transfer transaction has been prepared. Please sign and send it using your wallet.\",\n  \"tool_output\": [\n    {\n      \"transaction\": {\n        \"to\": \"0x3bc2018d6d6ea88990b2cb9784f3e129ecbce6bd\",\n        \"value\": \"100000000000000000\"\n      },\n      \"metadata\": {\n        \"types\": {\n          \"to\": \"address\",\n          \"value\": \"uint256\"\n        },\n        \"token\": {\n          \"symbol\": \"SEI\",\n          \"decimals\": 18,\n          \"formattedAmount\": \"0.1\"\n        }\n      },\n      \"executionId\": \"78a92b5d-1467-47e9-86ed-c96bf057b537\"\n    }\n  ]\n}",
+    "tool_call_id": "d85a6504-deab-44cc-a5f7-118ee6ea3e76",
     "name": "transfer_sei",
     "additional_kwargs": {},
     "response_metadata": {}

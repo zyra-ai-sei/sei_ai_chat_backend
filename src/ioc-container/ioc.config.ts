@@ -15,6 +15,9 @@ import { UserService } from "../services/UserService";
 import { UserController } from "../controller/UserController";
 import { TransactionService } from "../services/TransactionService";
 import { TransactionController } from "../controller/TransactionController";
+import { CryptoMarketController } from "../controller/CryptoMarketController";
+import { CryptoMarketService } from "../services/CryptoMarketService";
+import { ICryptoMarketService } from "../services/interfaces/ICryptoMarketService";
 
 const container = new Container()
 
@@ -22,6 +25,7 @@ container.bind<AuthController>(TYPES.AuthController).to(AuthController)
 container.bind<LlmController>(TYPES.LlmController).to(LlmController)
 container.bind<UserController>(TYPES.UserController).to(UserController)
 container.bind<TransactionController>(TYPES.TransactionController).to(TransactionController);
+container.bind<CryptoMarketController>(TYPES.CryptoMarketController).to(CryptoMarketController);
 
 container.bind<AuthService>(TYPES.AuthService).to(AuthService)
 container.bind<ILlmService>(TYPES.LlmService).to(LlmService).inSingletonScope()
@@ -29,6 +33,7 @@ container.bind<RedisService>(TYPES.RedisService).to(RedisService)
 container.bind<MCPService>(TYPES.MCPService).to(MCPService).inSingletonScope()
 container.bind<UserService>(TYPES.UserService).to(UserService);
 container.bind<TransactionService>(TYPES.TransactionService).to(TransactionService);
+container.bind<ICryptoMarketService>(TYPES.CryptoMarketService).to(CryptoMarketService);
 
 container.bind<Hello>(TYPES.Hello).to(Hello);
 container.bind<UserOp>(TYPES.UserOp).to(UserOp)
