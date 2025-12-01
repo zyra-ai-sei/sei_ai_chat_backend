@@ -31,6 +31,10 @@
     "@langchain/langgraph": "^0.4.1",
     "@langchain/langgraph-checkpoint-mongodb": "^0.1.1",
     "@langchain/mcp-adapters": "^0.6.0",
+    "@langchain/openai": "0.6.3",
+    "@lifi/sdk": "^3.13.5",
+    "@modelcontextprotocol/sdk": "^1.7.0",
+    "@orbs-network/twap-sdk": "^4.0.38",
     "@types/eventsource": "^3.0.0",
     "aws-sdk": "^2.1692.0",
     "cors": "^2.8.5",
@@ -43,6 +47,7 @@
     "inversify-express-utils": "^6.4.10",
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
+    "langchain": "^1.1.1",
     "langsmith": "^0.3.50",
     "llamaai": "^1.0.4",
     "mongoose": "^8.9.5",
@@ -54,9 +59,7 @@
     "socket.io": "^4.8.1",
     "validator": "^13.12.0",
     "viem": "^2.37.8",
-       "zod": "^3.25.32",
-    "@modelcontextprotocol/sdk": "^1.7.0",
-		"@orbs-network/twap-sdk": "^4.0.38"
+    "zod": "^3.25.32"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

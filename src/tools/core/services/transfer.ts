@@ -518,6 +518,7 @@ export async function buildApproveERC20(
   amount: string,
   network = DEFAULT_NETWORK
 ) {
+  console.log('this is token and spender address',tokenAddress, spenderAddress)
   const validatedTokenAddress = services.helpers.validateAddress(tokenAddress);
   const validatedSpenderAddress = services.helpers.validateAddress(spenderAddress);
 

@@ -8,6 +8,7 @@ import { UserService } from "./UserService";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import {ChatOpenAI} from "@langchain/openai"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
@@ -21,7 +22,7 @@ import path from "path";
 
 @injectable()
 export class LlmService implements ILlmService {
-  private genAI: ChatGoogleGenerativeAI;
+  private genAI: any;
   private model: string;
   private sessionId: string;
   private mongoClient: MongoClient;
@@ -34,6 +35,11 @@ export class LlmService implements ILlmService {
       temperature: 0,
       apiKey: env.GEMINI_API_KEY,
     });
+
+    // this.genAI = new ChatOpenAI({
+    //   model:'gpt-5-mini',
+    //   apiKey: env.OPENAI_API_KEY
+    // })
 
     // Initialize MongoDB client once with connection pooling
     this.mongoClient = new MongoClient(env.MONGO_URI, {

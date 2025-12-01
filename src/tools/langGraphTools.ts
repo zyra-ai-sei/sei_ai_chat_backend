@@ -1188,7 +1188,7 @@ export const createOrderTool = langchainTools.tool(
   {
     name: "place_order",
     description:
-      'Place limit order or market order for a pair of tokens. This creates an unsigned transaction that can be signed by the user. For deadline, you can enter durations like "1 week", "3 days", or an exact date like "3 August 2025" or if its something informal like 3rd aug 25 then convert it in standard format like 3 August 2025 before feeding to the tool.The tool has Helper to parse duration or date string to timestamp. approve_erc20 needs to be called before this tool to ensure sufficient allowance for the src token. If the from or to token is a native token (sei) then it needs to be wrapped or unwrapped to wsei accordingly using appropriate tool in the MCP.',
+      'Place limit order or market order for a pair of tokens. This creates an unsigned transaction that can be signed by the user. For deadline, you can enter durations like "1 week", "3 days", or an exact date like "3 August 2025" or if its something informal like 3rd aug 25 then convert it in standard format like 3 August 2025 before feeding to the tool.The tool has Helper to parse duration or date string to timestamp. IMPORTANT: If the from or to token is a native token (sei) then it needs to be wrapped or unwrapped to wsei accordingly using appropriate tool in the MCP along with this tool. If user wants to buy tokens over a period then use chunks and limit price',
     schema: z.object({
       amount: z.string().describe("The src Amount user wants to swap for, imp: its human readeable amount"),
       destTokenAddress: z
