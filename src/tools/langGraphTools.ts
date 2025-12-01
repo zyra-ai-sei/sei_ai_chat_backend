@@ -1336,6 +1336,127 @@ export const convertAddressToTokenSymbolTool = langchainTools.tool(
   }
 );
 
+// CRYPTO MARKET DATA TOOLS
+
+export const getCryptoMarketDataTool = langchainTools.tool(
+  async ({
+    coinId = "bitcoin",
+    timeframe = "7d",
+  }: {
+    coinId?: string;
+    timeframe?: string;
+  }) => {
+    try {
+      // Map timeframes to days
+      const timeframeToDays: Record<string, number> = {
+        "24h": 1,
+        "7d": 7,
+        "1m": 30,
+        "3m": 90,
+        "1y": 365,
+      };
+
+      const days = timeframeToDays[timeframe] || 7;
+
+      console.log(`[getCryptoMarketDataTool] Fetching complete data for ${coinId} with timeframe ${timeframe}`);
+
+      // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
+      const completeCoinUrl = new URL(
+        `https://api.coingecko.com/api/v3/coins/${coinId}`
+      );
+      completeCoinUrl.searchParams.append("localization", "false");
+      completeCoinUrl.searchParams.append("tickers", "true");
+      completeCoinUrl.searchParams.append("market_data", "true");
+      completeCoinUrl.searchParams.append("community_data", "true");
+      completeCoinUrl.searchParams.append("developer_data", "false");
+      completeCoinUrl.searchParams.append("sparkline", "false");
+
+      const completeCoinResponse = await fetch(completeCoinUrl.toString());
+      if (!completeCoinResponse.ok) {
+        throw new Error(`CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`);
+      }
+      const completeCoinData = await completeCoinResponse.json();
+
+      // Fetch chart data separately
+      const chartUrl = new URL(
+        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`
+      );
+      chartUrl.searchParams.append("vs_currency", "usd");
+      chartUrl.searchParams.append("days", days.toString());
+
+      const chartResponse = await fetch(chartUrl.toString());
+      if (!chartResponse.ok) {
+        throw new Error(`CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`);
+      }
+      const chartData = await chartResponse.json();
+
+      // CoinGecko returns { prices: [[timestamp, price], ...], market_caps: [[timestamp, cap], ...] }
+      const prices = chartData.prices || [];
+      const marketCaps = chartData.market_caps || [];
+
+      // Combine into [timestamp, price, marketCap][]
+      const formattedChartData: [number, number, number][] = [];
+      for (let i = 0; i < prices.length; i++) {
+        formattedChartData.push([
+          prices[i][0],
+          prices[i][1],
+          marketCaps[i] ? marketCaps[i][1] : 0,
+        ]);
+      }
+
+      console.log(`[getCryptoMarketDataTool] Successfully fetched complete data with ${formattedChartData.length} chart points`);
+
+      // Return complete coin data with chart
+      return {
+        text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
+        tool_output: {
+          type: "crypto_market_data",
+          coinId: completeCoinData.id,
+          symbol: completeCoinData.symbol,
+          name: completeCoinData.name,
+          image: completeCoinData.image,
+          categories: completeCoinData.categories || [],
+          timeframe,
+          dataPoints: formattedChartData.length,
+          chartData: formattedChartData,
+          market_data: completeCoinData.market_data,
+          sentiment_votes_up_percentage: completeCoinData.sentiment_votes_up_percentage || 0,
+          sentiment_votes_down_percentage: completeCoinData.sentiment_votes_down_percentage || 0,
+          watchlist_portfolio_users: completeCoinData.watchlist_portfolio_users || 0,
+          tickers: completeCoinData.tickers ? completeCoinData.tickers.slice(0, 10) : []
+        },
+      };
+    } catch (error) {
+      console.error(`[getCryptoMarketDataTool] Error:`, error);
+      return {
+        text: `Error fetching crypto market data for ${coinId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        isError: true,
+      };
+    }
+  },
+  {
+    name: "get_crypto_market_data",
+    description:
+      "Get comprehensive cryptocurrency data including price charts, market cap, sentiment, and liquidity for popular coins like Bitcoin, Ethereum, Sei, and others. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency.",
+    schema: z.object({
+      coinId: z
+        .string()
+        .optional()
+        .describe(
+          "The CoinGecko coin ID (e.g., 'bitcoin', 'ethereum', 'sei-network'). Defaults to 'bitcoin'."
+        ),
+      timeframe: z
+        .string()
+        .optional()
+        .describe(
+          "Time period: '24h', '7d', '1m', '3m', or '1y'. Defaults to '7d'."
+        ),
+    }),
+  }
+);
+
 const toolsList = [
   // Network Tools
   getChainInfoTool,
@@ -1388,6 +1509,9 @@ const toolsList = [
   // Utility Tools
   convertTokenSymbolToAddressTool,
   convertAddressToTokenSymbolTool,
+
+  // Crypto Market Data Tools
+  getCryptoMarketDataTool,
 ];
 
 export default toolsList;

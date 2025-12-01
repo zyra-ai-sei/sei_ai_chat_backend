@@ -4,6 +4,7 @@ export const TYPES = {
     LlmController: Symbol.for('LlmController'),
     UserController: Symbol.for('UserController'),
     TransactionController: Symbol.for('TransactionController'),
+    CryptoMarketController: Symbol.for('CryptoMarketController'),
     PortfolioController: Symbol.for('PortfolioController'),
     Hello: Symbol.for('Hello'),
 
@@ -14,6 +15,7 @@ export const TYPES = {
     MCPService: Symbol.for('MCPService'),
     UserService: Symbol.for('UserService'),
     TransactionService: Symbol.for('TransactionService'),
+    CryptoMarketService: Symbol.for('CryptoMarketService'),
     PortfolioService: Symbol.for('PortfolioService'),
 
     // database
