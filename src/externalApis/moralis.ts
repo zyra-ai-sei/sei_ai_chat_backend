@@ -221,11 +221,11 @@ export async function getDefiPositions(address: Address): Promise<DefiPosition[]
 export async function getSummaryByChain(
   address: Address,
   chainId: number
-): Promise<walletSummary> {
+): Promise<walletSummary | object> {
   const chainName = chainIdToMoralisChain[chainId];
   if (!chainName) {
     console.warn(`Chain ID ${chainId} not supported by Moralis`);
-    return [];
+    return {};
   }
 
   try {
@@ -238,7 +238,7 @@ export async function getSummaryByChain(
       console.error(
         `Failed to fetch tokens for chain ${chainName}: ${res.status}`
       );
-      return [];
+      return {};
     }
 
     let data: walletSummary = await res.json();
@@ -262,8 +262,13 @@ export async function getWalletSummary(address: Address): Promise<walletSummary[
   );
   const positionsByChain = await Promise.all(walletSummaries);
 
-  // Flatten all positions into a single array
-  const allPositions = positionsByChain.flat();
+  // Filter out any invalid responses and flatten
+  const allPositions = positionsByChain.filter((data): data is walletSummary => 
+    data !== null && 
+    data !== undefined && 
+    typeof data === 'object' && 
+    'total_count_of_trades' in data
+  );
 
   return allPositions;
 }

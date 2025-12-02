@@ -5,6 +5,10 @@ export type LlmStreamChunk =
             toolName: string;
             content: string;
             tool_output: unknown;
+        } | {
+            type:"data";
+            content: string;
+            data_output: unknown;
         };
 
 export interface ILlmService {

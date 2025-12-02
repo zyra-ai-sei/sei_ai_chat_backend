@@ -9,6 +9,7 @@ import {
 import { OrderTypeEnum } from "./enums/orderTypeEnum";
 import { parseDeadlineToTimestamp } from "./core/helper";
 import { parseUnits } from "ethers";
+import {tokenMappings} from "./utils/coingeckoTokenMappings"
 
 // Interface for LangChain tool function
 interface LangChainTool {
@@ -924,7 +925,6 @@ export const getAddressFromPrivateKeyTool = langchainTools.tool(
           null,
           2
         ),
-  
       };
     } catch (error) {
       return {
@@ -1089,7 +1089,7 @@ export const getPriceOfTokenTool = langchainTools.tool(
   }) => {
     try {
       const price = await services.getPriceForToken(token, network);
-      console.log('this is price')
+      console.log("this is price");
       return {
         text: JSON.stringify({ token, price, network }, null, 2),
       };
@@ -1190,7 +1190,11 @@ export const createOrderTool = langchainTools.tool(
     description:
       'Place limit order or market order for a pair of tokens. This creates an unsigned transaction that can be signed by the user. For deadline, you can enter durations like "1 week", "3 days", or an exact date like "3 August 2025" or if its something informal like 3rd aug 25 then convert it in standard format like 3 August 2025 before feeding to the tool.The tool has Helper to parse duration or date string to timestamp. IMPORTANT: If the from or to token is a native token (sei) then it needs to be wrapped or unwrapped to wsei accordingly using appropriate tool in the MCP along with this tool. If user wants to buy tokens over a period then use chunks and limit price',
     schema: z.object({
-      amount: z.string().describe("The src Amount user wants to swap for, imp: its human readeable amount"),
+      amount: z
+        .string()
+        .describe(
+          "The src Amount user wants to swap for, imp: its human readeable amount"
+        ),
       destTokenAddress: z
         .string()
         .describe("The token address which the user wants to swap for"),
@@ -1264,7 +1268,6 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
           null,
           2
         ),
-      
       };
     } catch (error) {
       return {
@@ -1340,10 +1343,10 @@ export const convertAddressToTokenSymbolTool = langchainTools.tool(
 
 export const getCryptoMarketDataTool = langchainTools.tool(
   async ({
-    coinId = "bitcoin",
+    coinName = "bitcoin",
     timeframe = "7d",
   }: {
-    coinId?: string;
+    coinName?: string;
     timeframe?: string;
   }) => {
     try {
@@ -1356,9 +1359,13 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         "1y": 365,
       };
 
+      const coinId = tokenMappings[coinName?.toLowerCase()];
+
       const days = timeframeToDays[timeframe] || 7;
 
-      console.log(`[getCryptoMarketDataTool] Fetching complete data for ${coinId} with timeframe ${timeframe}`);
+      console.log(
+        `[getCryptoMarketDataTool] Fetching complete data for ${coinId} with timeframe ${timeframe}`
+      );
 
       // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
       const completeCoinUrl = new URL(
@@ -1373,7 +1380,9 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 
       const completeCoinResponse = await fetch(completeCoinUrl.toString());
       if (!completeCoinResponse.ok) {
-        throw new Error(`CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`);
+        throw new Error(
+          `CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`
+        );
       }
       const completeCoinData = await completeCoinResponse.json();
 
@@ -1386,7 +1395,9 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 
       const chartResponse = await fetch(chartUrl.toString());
       if (!chartResponse.ok) {
-        throw new Error(`CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`);
+        throw new Error(
+          `CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`
+        );
       }
       const chartData = await chartResponse.json();
 
@@ -1404,12 +1415,14 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         ]);
       }
 
-      console.log(`[getCryptoMarketDataTool] Successfully fetched complete data with ${formattedChartData.length} chart points`);
+      console.log(
+        `[getCryptoMarketDataTool] Successfully fetched complete data with ${formattedChartData.length} chart points`
+      );
 
       // Return complete coin data with chart
       return {
         text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
-        tool_output: {
+        data_output: {
           type: "crypto_market_data",
           coinId: completeCoinData.id,
           symbol: completeCoinData.symbol,
@@ -1420,16 +1433,21 @@ export const getCryptoMarketDataTool = langchainTools.tool(
           dataPoints: formattedChartData.length,
           chartData: formattedChartData,
           market_data: completeCoinData.market_data,
-          sentiment_votes_up_percentage: completeCoinData.sentiment_votes_up_percentage || 0,
-          sentiment_votes_down_percentage: completeCoinData.sentiment_votes_down_percentage || 0,
-          watchlist_portfolio_users: completeCoinData.watchlist_portfolio_users || 0,
-          tickers: completeCoinData.tickers ? completeCoinData.tickers.slice(0, 10) : []
+          sentiment_votes_up_percentage:
+            completeCoinData.sentiment_votes_up_percentage || 0,
+          sentiment_votes_down_percentage:
+            completeCoinData.sentiment_votes_down_percentage || 0,
+          watchlist_portfolio_users:
+            completeCoinData.watchlist_portfolio_users || 0,
+          tickers: completeCoinData.tickers
+            ? completeCoinData.tickers.slice(0, 10)
+            : [],
         },
       };
     } catch (error) {
       console.error(`[getCryptoMarketDataTool] Error:`, error);
       return {
-        text: `Error fetching crypto market data for ${coinId}: ${
+        text: `Error fetching crypto market data: ${
           error instanceof Error ? error.message : String(error)
         }`,
         isError: true,
@@ -1439,14 +1457,12 @@ export const getCryptoMarketDataTool = langchainTools.tool(
   {
     name: "get_crypto_market_data",
     description:
-      "Get comprehensive cryptocurrency data including price charts, market cap, sentiment, and liquidity for popular coins like Bitcoin, Ethereum, Sei, and others. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency.",
+      "Get comprehensive cryptocurrency data including price charts, market cap, sentiment, and liquidity for popular coins and tokens. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency or even general query (like tell me about a token).",
     schema: z.object({
-      coinId: z
+      coinName: z
         .string()
         .optional()
-        .describe(
-          "The CoinGecko coin ID (e.g., 'bitcoin', 'ethereum', 'sei-network'). Defaults to 'bitcoin'."
-        ),
+        .describe("The name or symbol of token or cryptocurrency"),
       timeframe: z
         .string()
         .optional()
