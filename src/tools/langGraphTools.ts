@@ -10,6 +10,7 @@ import { OrderTypeEnum } from "./enums/orderTypeEnum";
 import { parseDeadlineToTimestamp } from "./core/helper";
 import { parseUnits } from "ethers";
 import {tokenMappings} from "./utils/coingeckoTokenMappings"
+import env from "../envConfig";
 
 // Interface for LangChain tool function
 interface LangChainTool {
@@ -1369,7 +1370,8 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 
       // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
       const completeCoinUrl = new URL(
-        `https://api.coingecko.com/api/v3/coins/${coinId}`
+        `https://api.coingecko.com/api/v3/coins/${coinId}`,
+        
       );
       completeCoinUrl.searchParams.append("localization", "false");
       completeCoinUrl.searchParams.append("tickers", "true");
@@ -1377,6 +1379,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
       completeCoinUrl.searchParams.append("community_data", "true");
       completeCoinUrl.searchParams.append("developer_data", "false");
       completeCoinUrl.searchParams.append("sparkline", "false");
+      
 
       const completeCoinResponse = await fetch(completeCoinUrl.toString());
       if (!completeCoinResponse.ok) {
@@ -1393,7 +1396,12 @@ export const getCryptoMarketDataTool = langchainTools.tool(
       chartUrl.searchParams.append("vs_currency", "usd");
       chartUrl.searchParams.append("days", days.toString());
 
-      const chartResponse = await fetch(chartUrl.toString());
+      const chartResponse = await fetch(chartUrl.toString(),{
+        method:'GET',
+        headers:{
+          "x-cg-demo-api-key": env.COINGECKO_API
+        }
+      });
       if (!chartResponse.ok) {
         throw new Error(
           `CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`
@@ -1455,9 +1463,9 @@ export const getCryptoMarketDataTool = langchainTools.tool(
     }
   },
   {
-    name: "get_crypto_market_data",
+    name: "get_crypto_or_token_data",
     description:
-      "Get comprehensive cryptocurrency data including price charts, market cap, sentiment, and liquidity for popular coins and tokens. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency or even general query (like tell me about a token).",
+      "Get comprehensive cryptocurrency or token data including price charts, market cap, sentiment, and liquidity for popular coins and tokens. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency or even general query (like tell me about a token).",
     schema: z.object({
       coinName: z
         .string()

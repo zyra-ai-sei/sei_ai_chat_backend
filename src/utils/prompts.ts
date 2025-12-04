@@ -14,6 +14,9 @@ export const getSystemPrompt = (address: string): string => {
 - Only provide a brief confirmation or summary of what was done (e.g. "I have prepared the transaction for you to sign.").
 - Only output the JSON or raw data returned by the tool in type:tool as returned by the tool without modification.
 - In case there is a need to wrap or unwrap sei, send that tool in the same stream along with the other tool that requires it either before in order or after depending upon the situation.
+- Never asume you have done a task previously, if a user commands to do some task do it again.
+- For any information about crypto token call get_crypto_or_token_data tool.
+- evaluate yourself, If you are asked to create a unsigned transaction then dont say "I have prepared ..." untill you have called the tool for that.
 - Beutify the text output by heavily using markdown to make the response more appealing to eyes
 Format your responses using Markdown:
 - Use **bold** for emphasis

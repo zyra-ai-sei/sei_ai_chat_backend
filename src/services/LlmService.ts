@@ -31,16 +31,16 @@ export class LlmService implements ILlmService {
 
   constructor(@inject(TYPES.UserService) private userService: UserService) {
     console.log("constructor");
-    this.genAI = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
-      temperature: 0,
-      apiKey: env.GEMINI_API_KEY,
-    });
+    // this.genAI = new ChatGoogleGenerativeAI({
+    //   model: "gemini-2.5-flash",
+    //   temperature: 0,
+    //   apiKey: env.GEMINI_API_KEY,
+    // });
 
-    // this.genAI = new ChatOpenAI({
-    //   model:'gpt-5-mini',
-    //   apiKey: env.OPENAI_API_KEY
-    // })
+    this.genAI = new ChatOpenAI({
+      model:'gpt-4.1-mini',
+      apiKey: env.OPENAI_API_KEY
+    })
 
     // Initialize MongoDB client once with connection pooling
     this.mongoClient = new MongoClient(env.MONGO_URI, {
@@ -282,69 +282,69 @@ export class LlmService implements ILlmService {
     }
   }
 
-  private async sanitizeHistory(address: string): Promise<void> {
-    try {
-      const config = { configurable: { thread_id: address } };
-      const checkpointTuple = await this.checkpointer.getTuple(config);
+  // private async sanitizeHistory(address: string): Promise<void> {
+  //   try {
+  //     const config = { configurable: { thread_id: address } };
+  //     const checkpointTuple = await this.checkpointer.getTuple(config);
 
-      if (!checkpointTuple?.checkpoint) return;
+  //     if (!checkpointTuple?.checkpoint) return;
 
-      const checkpoint = checkpointTuple.checkpoint;
-      const messages = checkpoint.channel_values?.messages;
+  //     const checkpoint = checkpointTuple.checkpoint;
+  //     const messages = checkpoint.channel_values?.messages;
 
-      if (!Array.isArray(messages)) return;
+  //     if (!Array.isArray(messages)) return;
 
-      let hasChanges = false;
-      const sanitizedMessages = messages.map((msg: any) => {
-        // Check for SystemMessage (either by class name or type property)
-        const isSystemMessage =
-          msg.constructor.name === "SystemMessage" ||
-          msg.type === "system" ||
-          (msg.lc_id && msg.lc_id.includes("SystemMessage"));
+  //     let hasChanges = false;
+  //     const sanitizedMessages = messages.map((msg: any) => {
+  //       // Check for SystemMessage (either by class name or type property)
+  //       const isSystemMessage =
+  //         msg.constructor.name === "SystemMessage" ||
+  //         msg.type === "system" ||
+  //         (msg.lc_id && msg.lc_id.includes("SystemMessage"));
 
-        if (isSystemMessage) {
-          hasChanges = true;
-          // Convert to HumanMessage with system type flag
-          // We need to preserve the ID and content
-          return new HumanMessage({
-            content: msg.content,
-            additional_kwargs: { ...msg.additional_kwargs, type: "system" },
-            id: msg.id,
-            name: msg.name,
-          });
-        }
-        return msg;
-      });
+  //       if (isSystemMessage) {
+  //         hasChanges = true;
+  //         // Convert to HumanMessage with system type flag
+  //         // We need to preserve the ID and content
+  //         return new HumanMessage({
+  //           content: msg.content,
+  //           additional_kwargs: { ...msg.additional_kwargs, type: "system" },
+  //           id: msg.id,
+  //           name: msg.name,
+  //         });
+  //       }
+  //       return msg;
+  //     });
 
-      if (hasChanges) {
-        const newCheckpoint = {
-          ...checkpoint,
-          channel_values: {
-            ...checkpoint.channel_values,
-            messages: sanitizedMessages,
-          },
-        };
+  //     if (hasChanges) {
+  //       const newCheckpoint = {
+  //         ...checkpoint,
+  //         channel_values: {
+  //           ...checkpoint.channel_values,
+  //           messages: sanitizedMessages,
+  //         },
+  //       };
 
-        // We need to provide newVersions, but since we are just modifying existing messages in place
-        // without changing the structure significantly, we might be able to reuse existing versions or pass empty.
-        // However, LangGraph might expect versions.
-        // For safety, we can try to pass the existing versions if available, or empty object.
-        // The put method signature: put(config, checkpoint, metadata, newVersions)
+  //       // We need to provide newVersions, but since we are just modifying existing messages in place
+  //       // without changing the structure significantly, we might be able to reuse existing versions or pass empty.
+  //       // However, LangGraph might expect versions.
+  //       // For safety, we can try to pass the existing versions if available, or empty object.
+  //       // The put method signature: put(config, checkpoint, metadata, newVersions)
 
-        // We'll use the parent config from the tuple if available, or the config we created
-        const writeConfig = checkpointTuple.config || config;
+  //       // We'll use the parent config from the tuple if available, or the config we created
+  //       const writeConfig = checkpointTuple.config || config;
 
-        await this.checkpointer.put(
-          writeConfig,
-          newCheckpoint,
-          checkpointTuple.metadata
-        );
-      }
-    } catch (error) {
-      console.error("Error sanitizing history:", error);
-      // Don't throw, just log, so we don't block execution if this fails
-    }
-  }
+  //       await this.checkpointer.put(
+  //         writeConfig,
+  //         newCheckpoint,
+  //         checkpointTuple.metadata
+  //       );
+  //     }
+  //   } catch (error) {
+  //     console.error("Error sanitizing history:", error);
+  //     // Don't throw, just log, so we don't block execution if this fails
+  //   }
+  // }
 
   // Initialize and store a chat session for a sessionId (generate if not provided)
   async initChat(address: string): Promise<any> {
@@ -367,30 +367,14 @@ export class LlmService implements ILlmService {
     abortSignal?: AbortSignal,
     messageType: "human" | "system" = "human"
   ): AsyncGenerator<LlmStreamChunk> {
-    // Cancel any existing stream for this address
-    const existingController = this.activeStreams.get(address);
-    if (existingController) {
-      console.log(`Cancelling previous stream for address: ${address}`);
-      existingController.abort();
-      this.activeStreams.delete(address);
-    }
 
-    // Create new AbortController for this stream
-    const controller = new AbortController();
-    this.activeStreams.set(address, controller);
 
     try {
-      await this.sanitizeHistory(address);
+      // await this.sanitizeHistory(address);
       const chat = await this.initChat(address);
 
       if (!chat) {
         throw new Error("Chat session not initialized");
-      }
-
-      // Check if already aborted
-      if (controller.signal.aborted) {
-        console.log(`Stream aborted before starting for address: ${address}`);
-        return;
       }
 
       const message =
@@ -406,7 +390,7 @@ export class LlmService implements ILlmService {
         {
           configurable: { thread_id: address },
           version: "v2",
-          signal: controller.signal,
+          // signal: controller.signal,
         }
       );
 
@@ -414,13 +398,7 @@ export class LlmService implements ILlmService {
       const seenToolCalls = new Set<string>();
 
       for await (const event of stream) {
-        // Check if aborted during iteration
-        if (controller.signal.aborted) {
-          console.log(
-            `Stream aborted during iteration for address: ${address}`
-          );
-          break;
-        }
+          
 
         // Handle streaming text chunks from the model
         if (event.event === "on_chat_model_stream") {
@@ -495,12 +473,6 @@ export class LlmService implements ILlmService {
               if (!toolOutput.length) {
                 continue;
               }
-              const outputDir = path.resolve(process.cwd(), "test", "output");
-              mkdirSync(outputDir, { recursive: true });
-              writeFileSync(
-                path.join(outputDir, "llm-output.json"),
-                JSON.stringify(output, null, 2)
-              );
 
               yield {
                 type: "tool",
@@ -519,12 +491,7 @@ export class LlmService implements ILlmService {
         }
       }
     } catch (error: any) {
-      if (error.name === "AbortError" || controller.signal.aborted) {
-        console.log(`Stream was aborted for address: ${address}`);
-      } else {
-        console.error(`Error in streamMessage for ${address}:`, error);
-        throw error;
-      }
+      
     } finally {
       // Clean up the active stream controller
       this.activeStreams.delete(address);
@@ -541,7 +508,7 @@ export class LlmService implements ILlmService {
     //   await this.mcpService.connectToMCP();
     // }
     //only initialize if needed
-    await this.sanitizeHistory(address);
+    // await this.sanitizeHistory(address);
     const chat = await this.initChat(address);
 
     if (!chat) throw new Error("Chat session not initialized");

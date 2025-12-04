@@ -26,7 +26,7 @@ export class PortfolioController {
     async getDefiPositions(
         @request() req: AuthenticatedRequest
     ) {
-        const address = "0xd100d8b69c5ae23d6aa30c6c3874bf47539b95fd";
+        const address = req.userAddress;
         return this.portfolioService.getDefiPositions(address as Address);
     }
 
@@ -34,7 +34,7 @@ export class PortfolioController {
     async getSummary(
         @request() req: AuthenticatedRequest
     ) {
-        const address = "0x07aE8551Be970cB1cCa11Dd7a11F47Ae82e70E67";
+        const address = req.userAddress;
         return this.portfolioService.getWalletSummary(address as Address)
     }
 }
