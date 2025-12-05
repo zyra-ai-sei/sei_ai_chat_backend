@@ -7,7 +7,7 @@ import { TYPES } from "../ioc-container/types";
 @injectable()
 export class CryptoMarketService implements ICryptoMarketService {
   private readonly baseUrl = "https://api.coingecko.com/api/v3";
-  private readonly apiKey = env.COINGECKO_API;
+  private readonly apiKey = env.COINGECKO_API_KEY;
 
   // Mapping timeframe to days
   private readonly timeframeToDays: Record<string, number> = {
