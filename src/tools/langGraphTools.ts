@@ -1400,7 +1400,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
       const chartResponse = await fetch(chartUrl.toString(),{
         method:'GET',
         headers:{
-          "x-cg-demo-api-key": env.COINGECKO_API
+          "x-cg-demo-api-key": env.COINGECKO_API_KEY
         }
       });
       if (!chartResponse.ok) {

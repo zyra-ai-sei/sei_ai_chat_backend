@@ -15,7 +15,7 @@ const env = cleanEnv(process.env, {
     RPC_URL:str(),
     MORALIS_API:str(),
     OPENAI_API_KEY: str(),
-    COINGECKO_API: str(),
+    COINGECKO_API_KEY: str(),
 })
 
 
