@@ -7,6 +7,7 @@ export const TYPES = {
     CryptoMarketController: Symbol.for('CryptoMarketController'),
     PortfolioController: Symbol.for('PortfolioController'),
     Hello: Symbol.for('Hello'),
+    StrategyController: Symbol.for("StrategyController"),
 
     // services
     AuthService: Symbol.for('AuthService'),

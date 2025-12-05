@@ -37,6 +37,7 @@
     "@orbs-network/twap-sdk": "^4.0.38",
     "@types/eventsource": "^3.0.0",
     "aws-sdk": "^2.1692.0",
+    "axios": "^1.13.2",
     "cors": "^2.8.5",
     "env": "^0.0.2",
     "ethers": "^6.13.5",

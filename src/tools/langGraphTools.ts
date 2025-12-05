@@ -1,4 +1,5 @@
 import { z } from "zod";
+import axios from "axios";
 import * as services from "./core/services/index";
 import {
   DEFAULT_NETWORK,
@@ -1481,6 +1482,65 @@ export const getCryptoMarketDataTool = langchainTools.tool(
   }
 );
 
+export const simulateDCAStrategyTool = langchainTools.tool(
+  async ({
+    coin,
+    total_investment,
+    frequency,
+    duration_days,
+  }: {
+    coin: string;
+    total_investment: number;
+    frequency: "daily" | "weekly";
+    duration_days: number;
+  }) => {
+    try {
+      const STRATEGY_ENGINE_URL =
+        process.env.STRATEGY_ENGINE_URL ||
+        "http://localhost:3001/v1/strategies/dca/simulate";
+
+      const response = await axios.post(STRATEGY_ENGINE_URL, {
+        coin,
+        total_investment,
+        frequency,
+        duration_days,
+      });
+
+      console.log(`[simulateDCAStrategyTool] Successfully simulated DCA strategy for ${response.data.summary.buy_count}`);
+
+      // Your tools MUST return JSON as string in the "text" field
+      return {
+        text: JSON.stringify(response?.data?.summary, null, 2),
+        data_output: response.data,
+      };
+    } catch (error: any) {
+      return {
+        text: `Error simulating DCA strategy for ${coin}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+  {
+    name: "simulate_dca_strategy",
+    description:
+      "Simulate a DCA (Dollar-Cost Averaging) strategy for any cryptocurrency. Use this when the user asks things like: 'simulate DCA for SEI', 'weekly DCA for bitcoin', '30-day DCA backtest', 'should I DCA into ethereum?', etc.",
+    schema: z.object({
+      coin: z.string().describe("The coin symbol (e.g., sei, btc, eth)"),
+      total_investment: z
+        .number()
+        .describe("Total amount invested over the entire DCA period"),
+      frequency: z
+        .enum(["daily", "weekly"])
+        .describe("How often investments are made"),
+      duration_days: z
+        .number()
+        .describe("How many days of price history to backtest (e.g., 30, 90, 365)"),
+    }),
+  }
+);
+
 const toolsList = [
   // Network Tools
   getChainInfoTool,
@@ -1536,6 +1596,7 @@ const toolsList = [
 
   // Crypto Market Data Tools
   getCryptoMarketDataTool,
+  simulateDCAStrategyTool
 ];
 
 export default toolsList;
