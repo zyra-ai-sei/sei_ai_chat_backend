@@ -19,10 +19,31 @@ export class StrategyController {
         body
       );
 
-      return response.data;  // forward full result to frontend
+      return response.data;
     } catch (err: any) {
       console.error("Strategy engine error:", err);
       throw new Error("Failed to simulate DCA");
+    }
+  }
+
+  @httpPost("/lump-sum")
+  async simulateLumpSum(
+    @requestBody() body: {
+      coin: string;
+      total_investment: number;
+      duration_days: number;
+    }
+  ) {
+    try {
+      const response = await axios.post(
+        "http://localhost:3001/v1/strategies/lump-sum/simulate",
+        body
+      );
+
+      return response.data;
+    } catch (err: any) {
+      console.error("Strategy engine error (lump sum):", err);
+      throw new Error("Failed to simulate Lump Sum");
     }
   }
 }

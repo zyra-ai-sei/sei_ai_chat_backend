@@ -1541,6 +1541,66 @@ export const simulateDCAStrategyTool = langchainTools.tool(
   }
 );
 
+export const simulateLumpSumStrategyTool = langchainTools.tool(
+  async ({
+    coin,
+    total_investment,
+    duration_days,
+  }: {
+    coin: string;
+    total_investment: number;
+    duration_days: number;
+  }) => {
+    try {
+      const STRATEGY_ENGINE_URL =
+        process.env.STRATEGY_ENGINE_URL ||
+        "http://localhost:3001/v1/strategies/lump-sum/simulate";
+
+      const response = await axios.post(STRATEGY_ENGINE_URL, {
+        coin,
+        total_investment,
+        duration_days,
+      });
+
+      console.log(
+        `[simulateLumpSumStrategyTool] Lump Sum simulation for ${coin} | tokens=${response.data.summary.tokens_bought}`
+      );
+
+      return {
+        // LLM MUST receive JSON string here
+        text: JSON.stringify(response?.data?.summary, null, 2),
+
+        // Zyra frontend receives rich data here
+        data_output: response.data,
+      };
+    } catch (error: any) {
+      return {
+        text: `Error simulating Lump Sum strategy for ${coin}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "simulate_lump_sum_strategy",
+    description:
+      "Simulate a Lump Sum strategy for any cryptocurrency. Use this when the user asks things like: 'simulate lump sum for SEI', 'invest 300 dollars in bitcoin today', 'run a 30-day lump sum backtest', or 'how would a one-time investment perform?'.",
+    schema: z.object({
+      coin: z.string().describe("The coin symbol (e.g., sei, btc, eth)"),
+      total_investment: z
+        .number()
+        .positive()
+        .describe("Total amount invested upfront (e.g., 300 for $300)"),
+      duration_days: z
+        .number()
+        .positive()
+        .describe("How many days of historical price data to backtest"),
+    }),
+  }
+);
+
 const toolsList = [
   // Network Tools
   getChainInfoTool,
@@ -1596,7 +1656,8 @@ const toolsList = [
 
   // Crypto Market Data Tools
   getCryptoMarketDataTool,
-  simulateDCAStrategyTool
+  simulateDCAStrategyTool,
+  simulateLumpSumStrategyTool
 ];
 
 export default toolsList;
