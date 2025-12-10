@@ -1511,7 +1511,10 @@ export const simulateDCAStrategyTool = langchainTools.tool(
       // Your tools MUST return JSON as string in the "text" field
       return {
         text: JSON.stringify(response?.data?.summary, null, 2),
-        data_output: response.data,
+        data_output: {
+          type: "dca_strategy",
+          ...response.data,
+        },
       };
     } catch (error: any) {
       return {
@@ -1571,7 +1574,10 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
         text: JSON.stringify(response?.data?.summary, null, 2),
 
         // Zyra frontend receives rich data here
-        data_output: response.data,
+        data_output: {
+          type: "lump_sum_strategy",
+          ...response.data,
+        },
       };
     } catch (error: any) {
       return {
