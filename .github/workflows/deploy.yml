@@ -31,7 +31,7 @@ jobs:
           echo "Pulling latest code..."
           git pull origin main
           echo "Installing dependencies..."
-          npm install
+          npm install --force
           echo "Building application..."
           npm run build
           echo "Restarting PM2..."
