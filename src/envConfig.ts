@@ -13,9 +13,11 @@ const env = cleanEnv(process.env, {
     LLAMA_API_KEY: str(),
     MONGO_URI: str(),
     RPC_URL:str(),
+    WSS_URL:str(),
     MORALIS_API:str(),
     OPENAI_API_KEY: str(),
     COINGECKO_API_KEY: str(),
+    ALCHEMY_API_KEY: str(),
 })
 
 

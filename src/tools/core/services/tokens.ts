@@ -2,6 +2,12 @@
 import { type Address, type Hash, type Hex, formatUnits, getContract } from 'viem';
 import { getPublicClient } from './clients';
 import { DEFAULT_NETWORK } from '../chains';
+import {
+	getTokenAddress,
+	getTokenSymbol,
+	getTokenInfo,
+	getTokenInfoByAddress
+} from '../../../config/networks';
 
 // Standard ERC20 ABI (minimal for reading)
 const erc20Abi = [
@@ -152,39 +158,22 @@ export async function getERC1155TokenURI(tokenAddress: Address, tokenId: bigint,
 	return contract.read.uri([tokenId]);
 }
 
-export async function getTokenAddress(tokenInfo:string) {
-	tokenInfo = tokenInfo.toUpperCase();
-	return TOKEN_ADDRESS_MAPPING[tokenInfo];
-}
+/**
+ * Get token address or symbol using centralized config
+ * @param tokenInfo - Token symbol or address
+ * @param network - Network name (defaults to DEFAULT_NETWORK)
+ * @returns Token address if symbol provided, or symbol if address provided
+ */
+export async function resolveToken(tokenInfo: string, network: string = DEFAULT_NETWORK): Promise<string | undefined> {
+	const upperTokenInfo = tokenInfo.toUpperCase();
 
-const TOKEN_ADDRESS_MAPPING = {
-    "WSEI": "0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7",
-    "0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7": "WSEI",
-    "USDC": "0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392",
-    "0xe15fC38F6D8c56aF07bbCBe3BAf5708A2Bf42392": "USDC",
-    "WBTC": "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c",
-    "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c": "WBTC",
-    "ISEI": "0x5Cf6826140C1C56Ff49C808A1A75407Cd1DF9423",
-    "0x5Cf6826140C1C56Ff49C808A1A75407Cd1DF9423": "ISEI",
-    "WETH": "0x160345fC359604fC6e70E3c5fAcbdE5F7A9342d8",
-    "0x160345fC359604fC6e70E3c5fAcbdE5F7A9342d8": "WETH",
-    "KAVAUSDT": "0xB75D0B03c06A926e488e2659DF1A861F860bD3d1",
-    "0xB75D0B03c06A926e488e2659DF1A861F860bD3d1": "KAVAUSDT",
-    "USDT": "0x9151434b16b9763660705744891fA906F660EcC5",
-    "0x9151434b16b9763660705744891fA906F660EcC5": "USDT",
-    "USDC.N": "0x3894085Ef7Ff0f0aeDf52E2A2704928d1Ec074F1",
-    "0x3894085Ef7Ff0f0aeDf52E2A2704928d1Ec074F1": "USDC.N",
-    "SEIYAN": "0x5f0E07dFeE5832Faa00c63F2D33A0D79150E8598",
-    "0x5f0E07dFeE5832Faa00c63F2D33A0D79150E8598": "SEIYAN",
-    "FXS": "",
-    "FASTUSD": "",
-    "ROCK": "",
-    "MILLI": "",
-    "POPO": "",
-    "USDA": "0x0Bbda0F76e205Fc6A160B90a09975fa443B3fE44",
-    "0x0Bbda0F76e205Fc6A160B90a09975fa443B3fE44": "USDA",
-    "APO": "0x5b8203e65aA5Be3F1CF53FD7fa21b91BA4038ECC",
-    "0x5b8203e65aA5Be3F1CF53FD7fa21b91BA4038ECC": "APO",
-	"DRG":"0x0a526e425809aEA71eb279d24ae22Dee6C92A4Fe",
-	"0x0a526e425809aEA71eb279d24ae22Dee6C92A4Fe":"DRG",
-};
+	// Check if it's a symbol (get address)
+	const address = getTokenAddress(upperTokenInfo, network);
+	if (address) return address;
+
+	// Check if it's an address (get symbol)
+	const symbol = getTokenSymbol(tokenInfo, network);
+	if (symbol) return symbol;
+
+	return undefined;
+}

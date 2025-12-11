@@ -41,7 +41,8 @@ export function buildDepositSEITx(
         symbol: "SEI",
         decimals: 18,
         formattedAmount: amount
-      }
+      },
+      network:network
     },
     executionId: randomUUID()
   };

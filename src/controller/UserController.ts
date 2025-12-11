@@ -5,29 +5,14 @@ import { UserService } from "../services/UserService";
 import { AuthenticatedRequest } from "../types/requestTypes";
 import AuthMiddleware from "../middleware/AuthMiddleware";
 
-
-@controller('/user', TYPES.AuthMiddleware)
+@controller("/user", TYPES.AuthMiddleware)
 export class UserController {
-    constructor(
-        @inject(TYPES.UserService) private userService: UserService,
-    ){}
+  constructor(@inject(TYPES.UserService) private userService: UserService) {}
 
-    @httpGet('/transactions')
-    private async getTransactions(
-        @request() req: AuthenticatedRequest
-    ) {
-        const address = req.userAddress;
-        const result = await this.userService.getUserTransactions(address)
-        return result;
-    }
-    @httpGet("/getOrderStatus")
-      private async getOrderStatus(
-        @request()
-        req: AuthenticatedRequest
-      ): Promise<any> {
-        const address = req.userAddress;
-        return this.userService.getOrderStatus(address);
-      }
-
-
+  @httpGet("/transactions")
+  private async getTransactions(@request() req: AuthenticatedRequest) {
+    const address = req.userAddress;
+    const result = await this.userService.getUserTransactions(address);
+    return result;
+  }
 }

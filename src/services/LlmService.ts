@@ -57,9 +57,9 @@ export class LlmService implements ILlmService {
     await this.checkpointer.deleteThread(address);
   }
 
-  async getChatHistory(address: string): Promise<any> {
+  async getChatHistory(address: string, network: string): Promise<any> {
     try {
-      const chat = await this.initChat(address);
+      const chat = await this.initChat(address, network);
       if (!chat) throw new Error("Chat session not initialized");
 
       const initialState = await chat.getState({
@@ -168,13 +168,14 @@ export class LlmService implements ILlmService {
    */
   async updateMessageById(
     address: string,
+    network: string,
     executionId: string,
     executionState: "completed" | "pending" | "failed",
     txnHash?: string
   ): Promise<boolean> {
     try {
       // Get the chat agent (same way as getChatHistory)
-      const chat = await this.initChat(address);
+      const chat = await this.initChat(address, network);
       if (!chat) {
         return false;
       }
@@ -347,15 +348,15 @@ export class LlmService implements ILlmService {
   // }
 
   // Initialize and store a chat session for a sessionId (generate if not provided)
-  async initChat(address: string): Promise<any> {
+  async initChat(address: string, network: string): Promise<any> {
     const convertedLangGraphTools = toolsList;
     let langGraphTools: StructuredTool[] = convertedLangGraphTools;
-
+    console.log('this is my fukking chain',network)
     // Use the pooled checkpointer
     const agent = createReactAgent({
       llm: this.genAI,
       tools: langGraphTools,
-      stateModifier: getSystemPrompt(address),
+      stateModifier: getSystemPrompt(address, network),
       checkpointSaver: this.checkpointer,
     });
     return agent;
@@ -364,6 +365,7 @@ export class LlmService implements ILlmService {
   async *streamMessage(
     prompt: string,
     address: string,
+    network: string,
     abortSignal?: AbortSignal,
     messageType: "human" | "system" = "human"
   ): AsyncGenerator<LlmStreamChunk> {
@@ -371,7 +373,7 @@ export class LlmService implements ILlmService {
 
     try {
       // await this.sanitizeHistory(address);
-      const chat = await this.initChat(address);
+      const chat = await this.initChat(address, network);
 
       if (!chat) {
         throw new Error("Chat session not initialized");
@@ -502,6 +504,7 @@ export class LlmService implements ILlmService {
   async sendMessage(
     prompt: string,
     address: string,
+    network: string,
     messageType: "human" | "system" = "human"
   ): Promise<string | object> {
     // if (!this.mcpService.isConnected()) {
@@ -509,7 +512,7 @@ export class LlmService implements ILlmService {
     // }
     //only initialize if needed
     // await this.sanitizeHistory(address);
-    const chat = await this.initChat(address);
+    const chat = await this.initChat(address, network);
 
     if (!chat) throw new Error("Chat session not initialized");
 

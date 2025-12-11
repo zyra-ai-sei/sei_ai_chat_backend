@@ -13,6 +13,7 @@ import * as services from "./index";
 import { constructSDK, TimeUnit } from "@orbs-network/twap-sdk";
 import { OrderTypeEnum } from "../../enums/orderTypeEnum";
 import { randomUUID } from "crypto";
+import { TWAP_CONFIGS, TwapConfig } from "../../../config/twap";
 
 const twap_abi = [
   {
@@ -88,24 +89,22 @@ const twap_abi = [
   },
 ];
 
-const config = {
-  chainName: "sei",
-  chainId: 1329,
-  twapVersion: 4,
-  twapAddress: "0xde737dB24548F8d41A4a3Ca2Bac8aaaDc4DBA099",
-  lensAddress: "0xa1376f2Bb80D3cF6c2D8ebEf34b3d122e9af4020",
-  takers: [
-    "0xA05405b6340A7F43dC5835351BFC4f5b1F028359",
-    "0xE3Efef1563a5960ACc731F9e4d6f4cBf5bd87dcA",
-  ],
-  bidDelaySeconds: 60,
-  minChunkSizeUsd: 50,
-  name: "DragonSwap",
-  partner: "Orbs:TWAP:DragonSwap",
-  exchangeAddress: "0xf2F933FafbDB97062CfA3c447ff373e76A90Efd6",
-  exchangeType: "ExchangeV2",
-  pathfinderKey: "",
-};
+
+/**
+ * Get TWAP configuration for a specific network
+ * @param network - Network name (e.g., 'sei', 'polygon', 'ethereum')
+ * @returns TWAP configuration for the network
+ * @throws Error if network is not supported
+ */
+function getTwapConfig(network: string): TwapConfig {
+  const config = TWAP_CONFIGS[network.toLowerCase()];
+  if (!config) {
+    throw new Error(
+      `TWAP configuration not found for network: ${network}. Supported networks: ${Object.keys(TWAP_CONFIGS).join(", ")}`
+    );
+  }
+  return config;
+}
 
 export async function buildask(
   srcTokenAddress: string,
@@ -116,8 +115,9 @@ export async function buildask(
   deadline: number,
   limitPrice: string,
   orderType: OrderTypeEnum,
-  network = config.chainName
+  network = "sei"
 ) {
+  const config = getTwapConfig(network);
   const twapSDK = constructSDK({ config });
 
   // Get decimals from source and destination token contracts
@@ -260,7 +260,8 @@ export async function buildask(
         chunks,
         fillDelay: fillDelayValue,
         isMarketOrder
-      }
+      }, 
+      network:network
     },
     executionId: randomUUID()
   };

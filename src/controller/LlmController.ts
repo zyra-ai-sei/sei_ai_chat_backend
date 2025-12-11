@@ -4,35 +4,37 @@ import { TYPES } from "../ioc-container/types";
 import { Response } from "express";
 import { ILlmService } from "../services/interfaces/ILlmService";
 import AuthMiddleware from "../middleware/AuthMiddleware";
-import { AuthenticatedRequest } from "../types/requestTypes";
+import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
 
-@controller("/llm", TYPES.AuthMiddleware)
+@controller("/llm", TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
 export class LlmController {
   constructor(@inject(TYPES.LlmService) private llmService: ILlmService) {}
 
   @httpPost("/init")
   private async init(
-    @request() req: AuthenticatedRequest
+    @request() req: AuthenticatedRequest & NetworkRequest
   ): Promise<{ success: boolean }> {
     const address = req.userAddress;
-    const response = await this.llmService.initChat(address);
+    const network = req.network;
+    const response = await this.llmService.initChat(address, network);
     return { success: true };
   }
 
   @httpPost("/chat")
   private async chat(
     @request()
-    req: AuthenticatedRequest
+    req: AuthenticatedRequest & NetworkRequest
   ): Promise<string | object> {
     const { prompt, messageType } = req.body;
     const address = req.userAddress
+    const network = req.network;
     const type = (messageType === "human" || messageType === "system") ? messageType : "human";
-    return this.llmService.sendMessage(prompt, address, type);
+    return this.llmService.sendMessage(prompt, address, network, type);
   }
 
   @httpGet("/stream")
   private async stream(
-    @request() req: AuthenticatedRequest,
+    @request() req: AuthenticatedRequest & NetworkRequest,
     @response() res: Response
   ): Promise<void> {
     const promptParam = req.query.prompt;
@@ -49,6 +51,7 @@ export class LlmController {
     }
 
     const address = req.userAddress;
+    const network = req.network;
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -63,7 +66,7 @@ export class LlmController {
     req.on("close", handleClose);
 
     try {
-      for await (const chunk of this.llmService.streamMessage(prompt, address, undefined, messageType)) {
+      for await (const chunk of this.llmService.streamMessage(prompt, address, network, undefined, messageType)) {
         if (closed) {
           break;
         }
@@ -90,18 +93,20 @@ export class LlmController {
   @httpGet("/getChatHistory")
   private async getChatHistory(
     @request()
-    req: AuthenticatedRequest
+    req: AuthenticatedRequest & NetworkRequest
   ): Promise<string | object> {
     const address = req.userAddress;
-    return this.llmService.getChatHistory(address);
+    const network = req.network;
+    return this.llmService.getChatHistory(address, network);
   }
 
   @httpPost("/updateMessageState")
   private async updateMessageState(
     @request()
-    req: AuthenticatedRequest
+    req: AuthenticatedRequest & NetworkRequest
   ): Promise<{ success: boolean; message?: string }> {
     const address = req.userAddress;
+    const network = req.network;
     const { executionId, executionState, txnHash } = req.body;
     
     if (!executionId || !executionState) {
@@ -114,6 +119,7 @@ export class LlmController {
     
     const success = await this.llmService.updateMessageById(
       address, 
+      network,
       executionId, 
       executionState,
       txnHash

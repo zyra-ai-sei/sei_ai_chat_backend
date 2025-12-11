@@ -342,7 +342,7 @@ export const getTokenBalanceTool = langchainTools.tool(
     network = DEFAULT_NETWORK,
   }): Promise<any> => {
     try {
-      console.log("bitch");
+      console.log("");
       const balance = await services.getERC20Balance(
         tokenAddress,
         ownerAddress,

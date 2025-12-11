@@ -22,6 +22,16 @@ export class UserOp {
     }
   }
 
+  async userExists(address: string): Promise<boolean> {
+    try {
+      const exists = await UserData.exists({ address: address as String });
+      return exists !== null;
+    } catch (err) {
+      console.error("Error checking user existence:", err);
+      return false;
+    }
+  }
+
   async getUserHistory(id: string): Promise<Chat[]> {
     try {
       const result: any = await UserData.findOne({ address: id as String })

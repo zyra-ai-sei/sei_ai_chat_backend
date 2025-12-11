@@ -3,9 +3,9 @@ import { TYPES } from "../ioc-container/types";
 import { inject } from "inversify";
 import { TransactionService } from "../services/TransactionService";
 import { type Request } from "express";
-import { AuthenticatedRequest } from "../types/requestTypes";
+import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
 
-@controller("/transactions",TYPES.AuthMiddleware)
+@controller("/transactions",TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
 export class TransactionController {
 
     constructor(
@@ -14,10 +14,11 @@ export class TransactionController {
 
     @httpGet("/details")
     async getTransactionDetails(
-         @request() req: AuthenticatedRequest
+         @request() req: AuthenticatedRequest & NetworkRequest
     ) {
         const {txHash} = req.query;
         const address = req.userAddress;
-        return await this.transactionService.addTransaction(address,String(txHash));
+        const network = req.network;
+        return await this.transactionService.addTransaction(address,String(txHash), network);
     }
 }

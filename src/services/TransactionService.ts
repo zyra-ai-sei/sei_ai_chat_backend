@@ -10,12 +10,13 @@ export class TransactionService {
 
   async addTransaction(
     address: string,
-    txHash: string
+    txHash: string,
+    network: string,
   ): Promise<{ data: Transaction }> {
     try {
       // Ensure MCP connection
       // Call get_transaction tool directly
-      const toolResult = await getTransactionTool.call({ txHash });
+      const toolResult = await getTransactionTool.call({ txHash, network });
 
       let text = "";
       if (typeof toolResult === "string") {

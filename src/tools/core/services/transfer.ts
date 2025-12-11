@@ -456,7 +456,8 @@ export async function buildSeiTransferTx(
         symbol: "SEI",
         decimals: 18,
         formattedAmount: amount
-      }
+      },
+      network: network
     },
     executionId: randomUUID()
   };
@@ -506,7 +507,8 @@ export async function buildTransferERC20(
         symbol,
         decimals,
         formattedAmount: amount
-      }
+      },
+      network:network
     },
     executionId: randomUUID()
   };
@@ -558,7 +560,8 @@ export async function buildApproveERC20(
         symbol,
         decimals,
         formattedAmount: amount
-      }
+      },
+      network:network
     },
     executionId: randomUUID()
   };
@@ -613,7 +616,8 @@ export async function buildTransferERC721(
         name: tokenName,
         symbol: tokenSymbol,
         tokenId: tokenId.toString()
-      }
+      },
+      network:network
     },
     executionId: randomUUID()
   };
@@ -673,7 +677,8 @@ export async function buildTransferERC1155(
         symbol: tokenSymbol,
         tokenId: tokenId.toString(),
         formattedAmount: amount
-      }
+      },
+      network:network
     },
     executionId: randomUUID()
   };
