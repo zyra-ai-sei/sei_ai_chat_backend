@@ -231,7 +231,6 @@ export const getBalanceTool = langchainTools.tool(
   }) => {
     try {
       const balance = await services.getBalance(address, network);
-
       return {
         text: JSON.stringify(
           {
@@ -333,7 +332,6 @@ export const getTokenBalanceTool = langchainTools.tool(
     network = DEFAULT_NETWORK,
   }): Promise<any> => {
     try {
-      console.log("bitch");
       const balance = await services.getERC20Balance(
         tokenAddress,
         ownerAddress,
@@ -1258,7 +1256,8 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      const tokenAddress = await services.getTokenAddress(symbol);
+      console.log('bitch',network,symbol)
+      const tokenAddress = await services.resolveToken(symbol, network);
 
       return {
         text: JSON.stringify(
@@ -1282,13 +1281,13 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
   },
   {
     name: "convert_token_symbol_to_address",
-    description: "Convert a token symbol to its contract address",
+    description: "Convert a token symbol to its contract address for a specific network",
     schema: z.object({
       symbol: z.string().describe("Token symbol (e.g., 'USDC', 'WSEI')"),
       network: z
         .string()
         .optional()
-        .describe("Network name or chain ID. Defaults to sei."),
+        .describe("Network name or chain ID (e.g., 'sei', 'ethereum', 'polygon', 'arbitrum', 'optimism'). Defaults to sei."),
     }),
   }
 );

@@ -12,20 +12,22 @@ export type LlmStreamChunk =
         };
 
 export interface ILlmService {
-    initChat(address: string): Promise<void>;
-    getChatHistory(address: string): Promise<any>;
+    initChat(address: string, network: string): Promise<void>;
+    getChatHistory(address: string, network: string): Promise<any>;
     clearChat(address: string): Promise<void>;
-    sendMessage(prompt: string, address: string, messageType?: "human" | "system"): Promise<string | object>;
+    sendMessage(prompt: string, address: string, network:string, messageType?: "human" | "system"): Promise<string | object>;
     streamMessage(
         prompt: string, 
-        address: string, 
+        address: string,
+        network: string,
         abortSignal?: AbortSignal,
         messageType?: "human" | "system"
     ): AsyncGenerator<LlmStreamChunk>;
     updateMessageById(
         address: string,
+        network: string,
         executionId: string,
         executionState: "completed" | "pending" | "failed",
-        txnHash?: string
+        txnHash?: string,
     ): Promise<boolean>;
 }

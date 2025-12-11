@@ -8,6 +8,7 @@ export const TYPES = {
     PortfolioController: Symbol.for('PortfolioController'),
     Hello: Symbol.for('Hello'),
     StrategyController: Symbol.for("StrategyController"),
+    OrderController: Symbol.for("OrderController"),
 
     // services
     AuthService: Symbol.for('AuthService'),
@@ -18,10 +19,20 @@ export const TYPES = {
     TransactionService: Symbol.for('TransactionService'),
     CryptoMarketService: Symbol.for('CryptoMarketService'),
     PortfolioService: Symbol.for('PortfolioService'),
+    TwapEventService: Symbol.for('TwapEventService'),
+    CronService: Symbol.for('CronService'),
+    OrderService: Symbol.for('OrderService'),
 
     // database
     UserOp: Symbol.for('UserOp'),
+    OrderOp: Symbol.for('OrderOp'),
 
     // middleware
-    AuthMiddleware: Symbol.for('AuthMiddleware')
+    AuthMiddleware: Symbol.for('AuthMiddleware'),
+    NetworkMiddleware: Symbol.for('NetworkMiddleware'),
+
+    
+    // constants
+    Web3Provider: Symbol.for('Web3Provider'),
+    WebSocketProvider: Symbol.for('WebSocketProvider')
 };

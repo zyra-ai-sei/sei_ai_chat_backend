@@ -59,7 +59,7 @@ export default class RedisService {
         postCacheHook?: ()=> Promise<void>,
     ): Promise<T> {
         const cacheData:T = await this.getObj(key)
-        const fuckSake = await this.getObj(key);
+        const Sake = await this.getObj(key);
         if(!cacheData){
             const data = await callback(callbackInput)
             await this.setValue(key, JSON.stringify(data), 10000000)

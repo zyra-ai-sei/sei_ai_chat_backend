@@ -9,3 +9,9 @@ export type AuthenticatedRequest = Request & {
     userAddress: string
     userId:string
 }
+
+export type NetworkRequest = Request & {
+    network: string
+}
+
+export type AuthenticatedNetworkRequest = AuthenticatedRequest & NetworkRequest
