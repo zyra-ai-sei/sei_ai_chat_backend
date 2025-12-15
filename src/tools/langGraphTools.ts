@@ -479,7 +479,6 @@ export const transferTokenTool = langchainTools.tool(
         amount,
         network
       );
-      console.log("4");
       return {
         text: "An unsigned ERC20 transfer transaction has been prepared. Please sign and send it using your wallet.",
         tool_output: [unsignedTx],
@@ -1089,7 +1088,6 @@ export const getPriceOfTokenTool = langchainTools.tool(
   }) => {
     try {
       const price = await services.getPriceForToken(token, network);
-      console.log("this is price");
       return {
         text: JSON.stringify({ token, price, network }, null, 2),
       };
@@ -1127,7 +1125,6 @@ export const createOrderTool = langchainTools.tool(
     userAddress,
   }) => {
     try {
-      console.log("add", userAddress);
       // The TWAP contract is the spender
       const spenderAddress = "0xde737dB24548F8d41A4a3Ca2Bac8aaaDc4DBA099";
 
@@ -1256,7 +1253,6 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      console.log('bitch',network,symbol)
       const tokenAddress = await services.resolveToken(symbol, network);
 
       return {
@@ -1364,10 +1360,6 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 
       const days = timeframeToDays[timeframe] || 7;
 
-      console.log(
-        `[getCryptoMarketDataTool] Fetching complete data for ${coinId} with timeframe ${timeframe}`
-      );
-
       // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
       const completeCoinUrl = new URL(
         `https://api.coingecko.com/api/v3/coins/${coinId}`,
@@ -1423,10 +1415,6 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         ]);
       }
 
-      console.log(
-        `[getCryptoMarketDataTool] Successfully fetched complete data with ${formattedChartData.length} chart points`
-      );
-
       // Return complete coin data with chart
       return {
         text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
@@ -1453,7 +1441,6 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         },
       };
     } catch (error) {
-      console.error(`[getCryptoMarketDataTool] Error:`, error);
       return {
         text: `Error fetching crypto market data: ${
           error instanceof Error ? error.message : String(error)
@@ -1563,10 +1550,6 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
         total_investment,
         duration_days,
       });
-
-      console.log(
-        `[simulateLumpSumStrategyTool] Lump Sum simulation for ${coin} | tokens=${response.data.summary.tokens_bought}`
-      );
 
       return {
         // LLM MUST receive JSON string here

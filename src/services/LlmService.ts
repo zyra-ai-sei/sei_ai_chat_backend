@@ -53,17 +53,17 @@ export class LlmService implements ILlmService {
     this.checkpointer = new MongoDBSaver({ client: this.mongoClient });
   }
 
-  async clearChat(address: string) {
-    await this.checkpointer.deleteThread(address);
+  async clearChat(userId: string) {
+    await this.checkpointer.deleteThread(userId);
   }
 
-  async getChatHistory(address: string, network: string): Promise<any> {
+  async getChatHistory(userId: string, address: string, network: string): Promise<any> {
     try {
       const chat = await this.initChat(address, network);
       if (!chat) throw new Error("Chat session not initialized");
 
       const initialState = await chat.getState({
-        configurable: { thread_id: address },
+        configurable: { thread_id: userId },
       });
 
       const state = initialState?.values?.messages || [];
@@ -167,6 +167,7 @@ export class LlmService implements ILlmService {
    * Update a specific message by its execution ID in tool_output
    */
   async updateMessageById(
+    userId: string,
     address: string,
     network: string,
     executionId: string,
@@ -182,7 +183,7 @@ export class LlmService implements ILlmService {
 
       // Get current state
       const currentState = await chat.getState({
-        configurable: { thread_id: address },
+        configurable: { thread_id: userId },
       });
 
       if (!currentState?.values?.messages) {
@@ -249,19 +250,15 @@ export class LlmService implements ILlmService {
 
       if (!messageUpdated) {
         console.log(
-          `No tool output found with executionId ${executionId} for address: ${address}`
+          `No tool output found with executionId ${executionId} for userId: ${userId}`
         );
         return false;
       }
 
       // Update the state back to the graph
       await chat.updateState(
-        { configurable: { thread_id: address } },
+        { configurable: { thread_id: userId } },
         { messages: messages }
-      );
-
-      console.log(
-        `Successfully updated executionId ${executionId} to ${executionState} for address ${address}`
       );
       return true;
     } catch (error) {
@@ -351,7 +348,6 @@ export class LlmService implements ILlmService {
   async initChat(address: string, network: string): Promise<any> {
     const convertedLangGraphTools = toolsList;
     let langGraphTools: StructuredTool[] = convertedLangGraphTools;
-    console.log('this is my fukking chain',network)
     // Use the pooled checkpointer
     const agent = createReactAgent({
       llm: this.genAI,
@@ -364,6 +360,7 @@ export class LlmService implements ILlmService {
 
   async *streamMessage(
     prompt: string,
+    userId: string,
     address: string,
     network: string,
     abortSignal?: AbortSignal,
@@ -390,7 +387,7 @@ export class LlmService implements ILlmService {
       const stream = chat.streamEvents(
         { messages: [message] },
         {
-          configurable: { thread_id: address },
+          configurable: { thread_id: userId },
           version: "v2",
           // signal: controller.signal,
         }
@@ -496,7 +493,7 @@ export class LlmService implements ILlmService {
       
     } finally {
       // Clean up the active stream controller
-      this.activeStreams.delete(address);
+      this.activeStreams.delete(userId);
     }
   }
 
@@ -519,8 +516,6 @@ export class LlmService implements ILlmService {
     const initialState = await chat.getState({
       configurable: { thread_id: address },
     });
-    console.log("hi");
-    console.dir(initialState);
 
     const message =
       messageType === "system"

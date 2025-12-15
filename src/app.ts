@@ -106,9 +106,7 @@ arrowServer.app.emit("new2chat", "hi there");
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
-  console.log(
-    `${signal} signal received: closing HTTP server and database connections`
-  );
+
   try {
     // Import TYPES to get the correct symbol
     const { TYPES } = await import("./ioc-container/types");

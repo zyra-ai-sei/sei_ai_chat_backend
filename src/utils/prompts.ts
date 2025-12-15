@@ -4,6 +4,7 @@
 
 import { SUPPORTED_NETWORKS, getNetworkConfig } from "../config/networks";
 
+
 export const getSystemPrompt = (address: string, network: string): string => {
   const networkConfig = getNetworkConfig(network);
   const nativeToken = networkConfig?.symbol || network.toUpperCase();

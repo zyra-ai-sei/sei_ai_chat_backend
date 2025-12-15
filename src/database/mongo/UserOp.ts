@@ -12,7 +12,7 @@ export class UserOp {
 
   async getUserById(id: string): Promise<User | null> {
     try {
-      const result = await UserData.findOne({ address: id as String }).lean();
+      const result = await UserData.findOne({ userId: id as String }).lean();
       if (!result) {
         return null;
       }
@@ -24,8 +24,11 @@ export class UserOp {
 
   async userExists(address: string): Promise<boolean> {
     try {
-      const exists = await UserData.exists({ address: address as String });
-      return exists !== null;
+      let exists = await UserData.exists({ injectedAddress: address as String });
+      if(exists == null) {
+        exists = await UserData.exists({embeddedAddress: address as String});
+      }
+      return exists != null;
     } catch (err) {
       console.error("Error checking user existence:", err);
       return false;
@@ -71,16 +74,15 @@ export class UserOp {
   }
 
   async updateUserData(
-    userAddress: string,
+    userId: string,
     userData: Partial<User>
   ): Promise<boolean> {
     try {
-      await UserData.updateOne({ address: userAddress }, userData, {
+      await UserData.updateOne({ userId: userId }, userData, {
         upsert: true,
       });
       return true;
     } catch (err) {
-      // console.log('error in registering the user',err)
       throw new Error("Error in registering the user");
     }
   }
@@ -133,7 +135,9 @@ export class UserOp {
   transformUserData(userData: any): User {
     return {
       _id: userData?._id,
-      address: userData.address,
+      injectedAddress: userData.injectedAddress,
+      userId: userData.userId,
+      embeddedAddress: userData.embeddedAddress,
       history: userData?.history,
     };
   }

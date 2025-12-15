@@ -23,14 +23,15 @@ export class AuthController {
     unknown,
     unknown,
     {
-        signedMessage: ethers.Signature
-        address: string
-        message: string
+        userId: string
+        embeddedAddress: string
+        injectedAddress: string
+        token:string
     }
-    >): Promise<{token:string}> {
-       const {address,message,signedMessage} = req.body;
-       const token = await this.authservice.login(signedMessage,address,message);
-       return {token}
+    >): Promise<boolean> {
+       const {userId, embeddedAddress, injectedAddress, token} = req.body;
+       const res = await this.authservice.login(userId,embeddedAddress,injectedAddress, token);
+       return res
     }
 
       @httpPost('/verify')

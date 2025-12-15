@@ -189,7 +189,6 @@ export async function getDefiPostionsForChain(
 
     const data: DefiPosition[] = await res.json();
 
-    console.log('data output',data)
 
     // Add chainId to each token and filter out spam tokens
     return data

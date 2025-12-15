@@ -480,7 +480,6 @@ export async function buildTransferERC20(
     abi: erc20TransferAbi,
     client: publicClient as any,
   });
-  console.log("we are stuck here");
   // Get token decimals and symbol
   const [decimals, symbol] = await Promise.all([
     contract.read.decimals(),
@@ -520,7 +519,6 @@ export async function buildApproveERC20(
   amount: string,
   network = DEFAULT_NETWORK
 ) {
-  console.log('this is token and spender address',tokenAddress, spenderAddress)
   const validatedTokenAddress = services.helpers.validateAddress(tokenAddress);
   const validatedSpenderAddress = services.helpers.validateAddress(spenderAddress);
 
@@ -705,7 +703,6 @@ export async function getAllowance(
     decimals: number;
   };
 }> {
-  console.log("getAllowance")
   const validatedTokenAddress = services.helpers.validateAddress(tokenAddress);
   const validatedOwnerAddress = services.helpers.validateAddress(ownerAddress);
   const validatedSpenderAddress = services.helpers.validateAddress(spenderAddress);

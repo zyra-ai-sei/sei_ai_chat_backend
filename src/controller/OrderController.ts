@@ -11,7 +11,13 @@ export class OrderController {
   @httpGet("/")
   async getOrders(@request() req: AuthenticatedRequest) {
     const { page, limit } = req.query;
-    const address = req.userAddress;
+  const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
 
     return await this.orderService.getUserOrders(
       address,
