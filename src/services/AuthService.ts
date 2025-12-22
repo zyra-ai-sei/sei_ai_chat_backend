@@ -19,6 +19,7 @@ export class AuthService {
     this.privy = new PrivyClient({
       appId: env.PRIVY_APP_ID,
       appSecret: env.PRIVY_APP_SECRET,
+      // appSecret: "",
       jwtVerificationKey: env.PRIVY_VERIFICATION_KEY,
     });
   }
@@ -31,12 +32,23 @@ export class AuthService {
   ): Promise<boolean> {
     let verifiedClaims;
     try {
-      verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
+      // console.log("privy", this.privy);
+
+      // verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
+      const verificationKey = env.PRIVY_VERIFICATION_KEY.replace(
+        /\\n/g,
+        "\n"
+      );
+      verifiedClaims = jwt.verify(token, verificationKey, {
+        issuer: 'privy.io',
+        audience: env.PRIVY_APP_ID
+      });
+      // console.log(decoded);
     } catch (err) {
       throw new Error(`Unverifieble token !`);
     }
 
-    if (verifiedClaims.user_id != userId) {
+    if (verifiedClaims.sub != userId) {
       throw new Error(`Invalid user token`);
     }
 
@@ -84,7 +96,15 @@ export class AuthService {
     // First verify the token
     let verifiedClaims;
     try {
-      verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
+      const verificationKey = env.PRIVY_VERIFICATION_KEY.replace(
+        /\\n/g,
+        "\n"
+      );
+      verifiedClaims = jwt.verify(token, verificationKey, {
+        issuer: 'privy.io',
+        audience: env.PRIVY_APP_ID
+      });
+      // verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
     } catch (error: any) {
       throw new Error("Token has expired or is invalid");
     }
@@ -92,7 +112,7 @@ export class AuthService {
     console.log('verified claims',verifiedClaims)
 
     // Get userId from the verified token claims
-    const userId = verifiedClaims.user_id;
+    const userId = verifiedClaims.sub;
     
     // Retrieve user data from Redis using userId
     const redisData = await this.redisService.getValue(userId);
