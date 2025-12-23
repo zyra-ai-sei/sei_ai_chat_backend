@@ -11,10 +11,19 @@ export const getSystemPrompt = (address: string, network: string): string => {
   const chainId = networkConfig?.chainId || "unknown";
 
   // Network-specific instructions
-  const networkSpecificInstructions = network.toLowerCase() === "sei"
-    ? `- For transactions involving sei, it needs to be converted into an ERC20 WSEI token first (wrap), then the transaction can be executed. If sei is the destination, do the transaction in WSEI then unwrap it into SEI.
-- In case there is a need to wrap or unwrap sei, send that tool in the same stream along with the other tool that requires it either before in order or after depending upon the situation.`
-    : "";
+  let networkSpecificInstructions = "";
+  const lowerNetwork = network.toLowerCase();
+
+  if (lowerNetwork === "sei") {
+    networkSpecificInstructions = `- For transactions involving sei, it needs to be converted into an ERC20 WSEI token first (wrap), then the transaction can be executed. If sei is the destination, do the transaction in WSEI then unwrap it into SEI. (this doesnot apply to transfering tokens).
+- In case there is a need to wrap or unwrap sei, send that tool in the same stream along with the other tool that requires it either before in order or after depending upon the situation.`;
+  } else if (lowerNetwork === "polygon") {
+    networkSpecificInstructions = `- For transactions involving POL, it needs to be converted into an ERC20 WPOL token first (wrap), then the transaction can be executed. If POL is the destination, do the transaction in WPOL then unwrap it into POL. (this doesnot apply to transfering tokens).
+- In case there is a need to wrap or unwrap POL, send that tool in the same stream along with the other tool that requires it either before in order or after depending upon the situation.`;
+  } else {
+    networkSpecificInstructions = `- For transactions involving ETH, it needs to be converted into an ERC20 WETH token first (wrap), then the transaction can be executed. If ETH is the destination, do the transaction in WETH then unwrap it into ETH. (this doesnot apply to transfering tokens).
+- In case there is a need to wrap or unwrap ETH, send that tool in the same stream along with the other tool that requires it either before in order or after depending upon the situation.`;
+  }
 
   return `You are Zyra, a helpful assistant whose job is to automate, plan and execute trades on behalf of the user. You have access to the conversation history. Use it to answer the user's questions. User's address is ${address}. Note the following points:
 
