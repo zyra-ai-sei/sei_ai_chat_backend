@@ -96,7 +96,7 @@ const twap_abi = [
  * @returns TWAP configuration for the network
  * @throws Error if network is not supported
  */
-function getTwapConfig(network: string): TwapConfig {
+export function getTwapConfig(network: string): TwapConfig {
   const config = TWAP_CONFIGS[network.toLowerCase()];
   if (!config) {
     throw new Error(

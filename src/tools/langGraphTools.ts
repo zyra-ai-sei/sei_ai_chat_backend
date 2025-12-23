@@ -1129,7 +1129,8 @@ export const createOrderTool = langchainTools.tool(
     try {
       console.log("add", userAddress);
       // The TWAP contract is the spender
-      const spenderAddress = "0xde737dB24548F8d41A4a3Ca2Bac8aaaDc4DBA099";
+      const config = services.getTwapConfig(network);
+      const spenderAddress = config.twapAddress;
 
       // Check current allowance
       const allowance = await services.getAllowance(
