@@ -31,9 +31,9 @@ jobs:
           echo "Pulling latest code..."
           git pull origin main
           echo "Installing dependencies..."
-          npm install --force
+          yarn install --force
           echo "Building application..."
-          npm run build
+          yarn run build
           echo "Restarting PM2..."
           pm2 restart backend || pm2 start ecosystem.config.js --name backend  # Fallback if not running
           echo "Deployment complete!"
