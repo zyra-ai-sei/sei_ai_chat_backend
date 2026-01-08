@@ -26,8 +26,8 @@ export class AuthService {
 
   async login(
     userId,
-    injectedAddress: string,
     embeddedAddress: string,
+    injectedAddress: string,
     token: string
   ): Promise<boolean> {
     let verifiedClaims;
@@ -39,13 +39,16 @@ export class AuthService {
         /\\n/g,
         "\n"
       );
+      console.log('verification key', verificationKey);
       verifiedClaims = jwt.verify(token, verificationKey, {
         issuer: 'privy.io',
         audience: env.PRIVY_APP_ID
       });
       // console.log(decoded);
+      console.log('verifying token', token);
+      // verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
     } catch (err) {
-      throw new Error(`Unverifieble token !`);
+      throw new Error(`Unverifieble token !${err}`);
     }
 
     if (verifiedClaims.sub != userId) {
@@ -88,6 +91,7 @@ export class AuthService {
     authHeader?: string
   ): Promise<{ userId: string; embeddedAddress: string, injectedAddress: string }> {
     if (!authHeader?.startsWith("Bearer ")) {
+      console.log(authHeader);
       throw new Error("Invalid Authorization Header");
     }
 
@@ -121,12 +125,41 @@ export class AuthService {
       throw new Error("User session not found. Please login again.");
     }
 
-    const { embeddedAddress, injectedAddress } = JSON.parse(redisData);
+    const { injectedAddress, embeddedAddress } = JSON.parse(redisData);
+    console.log(redisData);
+    console.log('retrieved from redis', { injectedAddress, embeddedAddress });
 
     return { 
       userId,
       embeddedAddress: embeddedAddress || "", 
       injectedAddress: injectedAddress || "" 
     };
+  }
+
+  /**
+   * Get user's wallets with delegated signers from Privy
+   * These are wallets that have authorized your app to execute transactions on behalf of the user
+   * 
+   * @param userId - The user's DID (e.g., 'did:privy:...')
+   * @returns Array of wallet objects with signers
+   */
+  async getUserWalletsWithSigners(userId: string) {
+    try {
+      // Get user data from Privy
+      const user = await this.privy.users()._get(userId);
+
+      // Console log the entire user object
+      console.log('User data from Privy:', JSON.stringify(user, null, 2));
+
+      // Filter for wallets with delegated signers
+      const walletsWithSessionSigners = user.linked_accounts.filter(
+        (account) => account.type === 'wallet' && 'id' in account && account.delegated
+      );
+
+      return walletsWithSessionSigners;
+    } catch (error) {
+      console.error('Error fetching user wallets from Privy:', error);
+      throw new Error('Failed to fetch user wallets');
+    }
   }
 }

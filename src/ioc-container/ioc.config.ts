@@ -28,6 +28,10 @@ import { CronService } from "../jobs/cron";
 import { OrderOp } from "../database/mongo/OrderOp";
 import { OrderService } from "../services/OrderService";
 import { OrderController } from "../controller/OrderController";
+import { PrivyTransactionController } from "../controller/PrivyTransactionController";
+import { PrivyTransactionService } from "../services/PrivyTransactionService";
+import { PrivyTestController } from "../controller/PrivyTestController";
+import { DelegatedTransactionOp } from "../database/mongo/DelegatedTransactionOp";
 
 const container = new Container();
 
@@ -44,6 +48,10 @@ container
   .bind<PortfolioController>(TYPES.PortfolioController)
   .to(PortfolioController);
 container.bind<OrderController>(TYPES.OrderController).to(OrderController);
+container
+  .bind<PrivyTransactionController>(TYPES.PrivyTransactionController)
+  .to(PrivyTransactionController);
+container.bind<PrivyTestController>(TYPES.PrivyTestController).to(PrivyTestController);
 
 container.bind<AuthService>(TYPES.AuthService).to(AuthService);
 container.bind<ILlmService>(TYPES.LlmService).to(LlmService).inSingletonScope();
@@ -69,10 +77,15 @@ container
   .to(CronService)
   .inSingletonScope();
 container.bind<OrderService>(TYPES.OrderService).to(OrderService);
+container
+  .bind<PrivyTransactionService>(TYPES.PrivyTransactionService)
+  .to(PrivyTransactionService)
+  .inSingletonScope();
 
 container.bind<Hello>(TYPES.Hello).to(Hello);
 container.bind<UserOp>(TYPES.UserOp).to(UserOp);
 container.bind<OrderOp>(TYPES.OrderOp).to(OrderOp);
+container.bind<DelegatedTransactionOp>(TYPES.DelegatedTransactionOp).to(DelegatedTransactionOp);
 
 container.bind<AuthMiddleware>(TYPES.AuthMiddleware).to(AuthMiddleware);
 container.bind<NetworkMiddleware>(TYPES.NetworkMiddleware).to(NetworkMiddleware);

@@ -11,7 +11,7 @@ export class UserController {
 
   @httpGet("/transactions")
   private async getTransactions(@request() req: AuthenticatedRequest) {
-    const address = req.userAddress;
+    const address = req.userId;
     const result = await this.userService.getUserTransactions(address);
     return result;
   }

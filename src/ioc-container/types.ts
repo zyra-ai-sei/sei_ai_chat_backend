@@ -9,6 +9,8 @@ export const TYPES = {
     Hello: Symbol.for('Hello'),
     StrategyController: Symbol.for("StrategyController"),
     OrderController: Symbol.for("OrderController"),
+    PrivyTransactionController: Symbol.for('PrivyTransactionController'),
+    PrivyTestController: Symbol.for('PrivyTestController'),
 
     // services
     AuthService: Symbol.for('AuthService'),
@@ -22,16 +24,18 @@ export const TYPES = {
     TwapEventService: Symbol.for('TwapEventService'),
     CronService: Symbol.for('CronService'),
     OrderService: Symbol.for('OrderService'),
+    PrivyTransactionService: Symbol.for('PrivyTransactionService'),
 
     // database
     UserOp: Symbol.for('UserOp'),
     OrderOp: Symbol.for('OrderOp'),
+    DelegatedTransactionOp: Symbol.for('DelegatedTransactionOp'),
 
     // middleware
     AuthMiddleware: Symbol.for('AuthMiddleware'),
     NetworkMiddleware: Symbol.for('NetworkMiddleware'),
 
-    
+
     // constants
     Web3Provider: Symbol.for('Web3Provider'),
     WebSocketProvider: Symbol.for('WebSocketProvider')

@@ -21,6 +21,8 @@ const env = cleanEnv(process.env, {
   PRIVY_APP_SECRET: str(),
   PRIVY_APP_ID: str(),
   PRIVY_VERIFICATION_KEY: str(),
+  PRIVY_AUTHORIZATION_PRIVATE_KEY: str(),
+  PRIVY_KEY_QUORUM_ID: str(),
 });
 
 export default env;
