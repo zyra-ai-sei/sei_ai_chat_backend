@@ -158,7 +158,6 @@ export async function getERC20Balance(
     decimals: number;
   };
 }> {
-  console.log('reached at start', ownerAddress);
   const validatedTokenAddress = services.helpers.validateAddress(tokenAddress);
   const validatedOwnerAddress = services.helpers.validateAddress(ownerAddress);
 
@@ -170,15 +169,11 @@ export async function getERC20Balance(
     client: publicClient,
   });
 
-  console.log('reached after contract instance created')
-
   const [balance, symbol, decimals] = await Promise.all([
     contract.read.balanceOf([validatedOwnerAddress]),
     contract.read.symbol(),
     contract.read.decimals(),
   ]);
-
-  console.log('this is also done')
 
   return {
     raw: balance,
@@ -261,7 +256,6 @@ export async function getCurrentPrices(network = DEFAULT_NETWORK) {
     abi: ORACLE_PRECOMPILE_ABI,
     functionName: "getExchangeRates",
   });
-  console.log('twap', exchangeRates[0].denom)
 
   return exchangeRates.map((rate) => ({
     denom: rate.denom,
@@ -285,7 +279,6 @@ export async function getTwapData(
     functionName: "getOracleTwaps",
     args: [lookbackSeconds],
   });
-  console.log('twap', twapData[0].denom)
   return twapData.map((twap) => ({
     denom: twap.denom,
     price: parseFloat(twap.twap),

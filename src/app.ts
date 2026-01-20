@@ -52,6 +52,24 @@ class ArrowServer {
       },
       transports: ["polling", "websocket"],
     });
+
+    // Inject IO into SocketService
+    const { TYPES } = require("./ioc-container/types");
+    const socketService = container.get<any>(TYPES.SocketService);
+    socketService.setIO(this.io);
+
+    this.io.on("connection", (socket) => {
+      console.log("User connected:", socket.id);
+      
+      socket.on("join", (userId) => {
+        console.log(`User ${userId} joined room`);
+        socket.join(userId);
+      });
+
+      socket.on("disconnect", () => {
+        console.log("User disconnected:", socket.id);
+      });
+    });
   }
 
   public getIO(): SocketServer {
@@ -86,9 +104,17 @@ class ArrowServer {
       const twapEventService = container.get<any>(TYPES.TwapEventService);
       twapEventService.startListener();
 
+      // Start transaction monitoring listener
+      const transactionService = container.get<any>(TYPES.TransactionService);
+      transactionService.startListener();
+
+      // Start token tracking service
+      const tokenTrackingService = container.get<any>(TYPES.TokenTrackingService);
+      tokenTrackingService.startTracking();
+
       // Start cron jobs
       const cronService = container.get<any>(TYPES.CronService);
-      // cronService.startCronJobs();
+      cronService.startCronJobs();
     } catch (error) {
       console.error("Failed to start cron jobs:", error);
     }
@@ -99,16 +125,14 @@ const arrowServer = new ArrowServer(container);
 arrowServer.start();
 
 arrowServer.app.get("/", (req, res) => {
-  res.send("Hello World 🖕");
+  res.send("Hello World ");
 });
 
 arrowServer.app.emit("new2chat", "hi there");
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
-  console.log(
-    `${signal} signal received: closing HTTP server and database connections`
-  );
+
   try {
     // Import TYPES to get the correct symbol
     const { TYPES } = await import("./ioc-container/types");

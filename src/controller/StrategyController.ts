@@ -21,7 +21,6 @@ export class StrategyController {
 
       return response.data;
     } catch (err: any) {
-      console.error("Strategy engine error:", err);
       throw new Error("Failed to simulate DCA");
     }
   }

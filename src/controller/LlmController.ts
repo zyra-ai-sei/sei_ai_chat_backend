@@ -1,24 +1,21 @@
-import { controller, httpGet, httpPost, request, response } from "inversify-express-utils";
+import {
+  controller,
+  httpGet,
+  httpPost,
+  request,
+  response,
+} from "inversify-express-utils";
 import { inject } from "inversify";
 import { TYPES } from "../ioc-container/types";
 import { Response } from "express";
 import { ILlmService } from "../services/interfaces/ILlmService";
 import AuthMiddleware from "../middleware/AuthMiddleware";
 import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
+import { ethers } from "ethers";
 
 @controller("/llm", TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
 export class LlmController {
   constructor(@inject(TYPES.LlmService) private llmService: ILlmService) {}
-
-  @httpPost("/init")
-  private async init(
-    @request() req: AuthenticatedRequest & NetworkRequest
-  ): Promise<{ success: boolean }> {
-    const address = req.userAddress;
-    const network = req.network;
-    const response = await this.llmService.initChat(address, network);
-    return { success: true };
-  }
 
   @httpPost("/chat")
   private async chat(
@@ -26,10 +23,20 @@ export class LlmController {
     req: AuthenticatedRequest & NetworkRequest
   ): Promise<string | object> {
     const { prompt, messageType } = req.body;
-    const address = req.userAddress
     const network = req.network;
-    const type = (messageType === "human" || messageType === "system") ? messageType : "human";
-    return this.llmService.sendMessage(prompt, address, network, type);
+    const address = req.query.address;
+    const userId = req.userId;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
+    const type =
+      messageType === "human" || messageType === "system"
+        ? messageType
+        : "human";
+    return this.llmService.sendMessage(prompt, userId, address, network, type);
   }
 
   @httpGet("/stream")
@@ -38,19 +45,32 @@ export class LlmController {
     @response() res: Response
   ): Promise<void> {
     const promptParam = req.query.prompt;
-    const prompt = Array.isArray(promptParam) ? promptParam.join(" ") : promptParam;
-    
+    const prompt = Array.isArray(promptParam)
+      ? promptParam.join(" ")
+      : promptParam;
+    const address = ethers.getAddress(req.query.address as string);
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
     const messageTypeParam = req.query.messageType;
-    const messageType = (typeof messageTypeParam === "string" && (messageTypeParam === "human" || messageTypeParam === "system")) 
-      ? messageTypeParam 
-      : "human";
+    const messageType =
+      typeof messageTypeParam === "string" &&
+      (messageTypeParam === "human" || messageTypeParam === "system")
+        ? messageTypeParam
+        : "human";
 
     if (typeof prompt !== "string" || !prompt.trim()) {
-      res.status(400).json({ success: false, message: "prompt query parameter is required" });
+      res.status(400).json({
+        success: false,
+        message: "prompt query parameter is required",
+      });
       return;
     }
 
-    const address = req.userAddress;
+    const userId = req.userId;
     const network = req.network;
 
     res.setHeader("Content-Type", "text/event-stream");
@@ -66,11 +86,17 @@ export class LlmController {
     req.on("close", handleClose);
 
     try {
-      for await (const chunk of this.llmService.streamMessage(prompt, address, network, undefined, messageType)) {
+      for await (const chunk of this.llmService.streamMessage(
+        prompt,
+        userId,
+        address,
+        network,
+        undefined,
+        messageType
+      )) {
         if (closed) {
           break;
         }
-        console.log('stream', JSON.stringify(chunk))
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       }
 
@@ -80,7 +106,11 @@ export class LlmController {
     } catch (error) {
       console.error("Error streaming LLM response:", error);
       if (!closed) {
-        res.write(`event: error\ndata: ${JSON.stringify({ message: "Stream failed" })}\n\n`);
+        res.write(
+          `event: error\ndata: ${JSON.stringify({
+            message: "Stream failed",
+          })}\n\n`
+        );
       }
     } finally {
       req.off("close", handleClose);
@@ -95,9 +125,16 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest & NetworkRequest
   ): Promise<string | object> {
-    const address = req.userAddress;
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
     const network = req.network;
-    return this.llmService.getChatHistory(address, network);
+    const userId = req.userId;
+    return this.llmService.getChatHistory(userId, address, network);
   }
 
   @httpPost("/updateMessageState")
@@ -105,27 +142,47 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest & NetworkRequest
   ): Promise<{ success: boolean; message?: string }> {
-    const address = req.userAddress;
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
+    const userId = req.userId;
     const network = req.network;
     const { executionId, executionState, txnHash } = req.body;
-    
+
     if (!executionId || !executionState) {
-      return { success: false, message: "Missing executionId or executionState" };
+      return {
+        success: false,
+        message: "Missing executionId or executionState",
+      };
     }
-    
+
     if (!["completed", "pending", "failed"].includes(executionState)) {
-      return { success: false, message: "Invalid executionState. Must be completed, pending, or failed" };
+      return {
+        success: false,
+        message:
+          "Invalid executionState. Must be completed, pending, or failed",
+      };
     }
-    
+
     const success = await this.llmService.updateMessageById(
-      address, 
+      userId,
+      address,
       network,
-      executionId, 
+      executionId,
       executionState,
       txnHash
     );
-    
-    return { success, message: success ? "Message updated successfully" : "Failed to update message" };
+
+    return {
+      success,
+      message: success
+        ? "Message updated successfully"
+        : "Failed to update message",
+    };
   }
 
   @httpGet("/clearChat")
@@ -133,8 +190,15 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest
   ): Promise<{ success: boolean }> {
-    const address = req.userAddress;
-    await this.llmService.clearChat(address);
+    const userId = req.userId;
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
+    ) {
+      throw new Error(`User request not authorized`);
+    }
+    await this.llmService.clearChat(userId, address);
     return { success: true };
   }
 }

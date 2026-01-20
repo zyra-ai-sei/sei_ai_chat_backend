@@ -12,6 +12,9 @@ import { parseDeadlineToTimestamp } from "./core/helper";
 import { parseUnits } from "ethers";
 import {tokenMappings} from "./utils/coingeckoTokenMappings"
 import env from "../envConfig";
+import { getTrackedTransfers } from "./database/services";
+import { getLatestTwitterTweets, getTopTwitterTweets } from "./twitter/services";
+import { StructuredTool } from "langchain";
 
 // Interface for LangChain tool function
 interface LangChainTool {
@@ -479,7 +482,6 @@ export const transferTokenTool = langchainTools.tool(
         amount,
         network
       );
-      console.log("4");
       return {
         text: "An unsigned ERC20 transfer transaction has been prepared. Please sign and send it using your wallet.",
         tool_output: [unsignedTx],
@@ -651,7 +653,6 @@ export const approveTokenSpendingTool = langchainTools.tool(
       );
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
         executionId: result.executionId,
       };
@@ -703,7 +704,6 @@ export const approveErc20Tool = langchainTools.tool(
       );
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
       };
     } catch (error) {
@@ -959,7 +959,6 @@ export const wrapSeiTool = langchainTools.tool(
       const result = await services.buildDepositSEITx(amount, network);
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
       };
     } catch (error) {
@@ -1089,7 +1088,6 @@ export const getPriceOfTokenTool = langchainTools.tool(
   }) => {
     try {
       const price = await services.getPriceForToken(token, network);
-      console.log("this is price");
       return {
         text: JSON.stringify({ token, price, network }, null, 2),
       };
@@ -1127,7 +1125,6 @@ export const createOrderTool = langchainTools.tool(
     userAddress,
   }) => {
     try {
-      console.log("add", userAddress);
       // The TWAP contract is the spender
       const config = services.getTwapConfig(network);
       const spenderAddress = config.twapAddress;
@@ -1257,7 +1254,6 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      console.log('bitch',network,symbol)
       const tokenAddress = await services.resolveToken(symbol, network);
 
       return {
@@ -1365,10 +1361,6 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 
       const days = timeframeToDays[timeframe] || 7;
 
-      console.log(
-        `[getCryptoMarketDataTool] Fetching complete data for ${coinId} with timeframe ${timeframe}`
-      );
-
       // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
       const completeCoinUrl = new URL(
         `https://api.coingecko.com/api/v3/coins/${coinId}`,
@@ -1424,15 +1416,11 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         ]);
       }
 
-      console.log(
-        `[getCryptoMarketDataTool] Successfully fetched complete data with ${formattedChartData.length} chart points`
-      );
-
       // Return complete coin data with chart
       return {
         text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
         data_output: {
-          type: "crypto_market_data",
+          type: "CRYPTO_MARKET_DATA",
           coinId: completeCoinData.id,
           symbol: completeCoinData.symbol,
           name: completeCoinData.name,
@@ -1454,7 +1442,6 @@ export const getCryptoMarketDataTool = langchainTools.tool(
         },
       };
     } catch (error) {
-      console.error(`[getCryptoMarketDataTool] Error:`, error);
       return {
         text: `Error fetching crypto market data: ${
           error instanceof Error ? error.message : String(error)
@@ -1510,9 +1497,7 @@ export const simulateDCAStrategyTool = langchainTools.tool(
 
       // Your tools MUST return JSON as string in the "text" field
       return {
-        text: JSON.stringify(response?.data?.summary, null, 2),
         data_output: {
-          type: "dca_strategy",
           ...response.data,
         },
       };
@@ -1565,17 +1550,9 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
         duration_days,
       });
 
-      console.log(
-        `[simulateLumpSumStrategyTool] Lump Sum simulation for ${coin} | tokens=${response.data.summary.tokens_bought}`
-      );
-
       return {
-        // LLM MUST receive JSON string here
-        text: JSON.stringify(response?.data?.summary, null, 2),
-
         // Zyra frontend receives rich data here
         data_output: {
-          type: "lump_sum_strategy",
           ...response.data,
         },
       };
@@ -1606,8 +1583,115 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
     }),
   }
 );
+export const trackRecordsTool = langchainTools.tool(
+  async ({
+    address
+  }: {
+    address:string
+  }) => {
+    try {
+     
 
-const toolsList = [
+      const response = await getTrackedTransfers(address);
+
+      return {
+        // LLM MUST receive JSON string here
+        text: JSON.stringify(response, null, 2),
+      };
+    } catch (error: any) {
+      return {
+        text: `Error tracking transactions for ${address}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "trackRecords",
+    description:
+      "Get transaction records of an address. This tool is used to get previous transaction records of an address accross multiple chains at once.",
+    schema: z.object({
+      address: z.string().describe("records of this address would be tracked"),
+    }),
+  }
+);
+
+
+export const LatestTwitterTweetsTool = langchainTools.tool(
+  async ({
+    topic
+  }: {
+    topic:string
+  }) => {
+    try {
+     
+      const response = await getLatestTwitterTweets(topic);
+      return {
+        text:'Latest twitter posts have been fetched',
+        // LLM MUST receive JSON string here
+          data_output: {
+          ...response
+        },
+      };
+    } catch (error: any) {
+      return {
+        text: `Error in fetching twitter feeds for ${topic}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "FetchLatestTwitterTweets",
+    description:
+      "Get latest twitter(X) tweets for a given topic",
+    schema: z.object({
+      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
+    }),
+  }
+);
+
+export const TopTwitterTweetsTool = langchainTools.tool(
+  async ({
+    topic
+  }: {
+    topic:string
+  }) => {
+    try {
+     
+
+      const response = await getTopTwitterTweets(topic);
+
+       return {
+          data_output: {
+          ...response,
+        },
+      };
+    } catch (error: any) {
+      return {
+        text: `Error in fetching twitter feeds for ${topic}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "FetchTopTwitterTweets",
+    description:
+      "Get Top twitter(X) tweets for a given topic",
+    schema: z.object({
+      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
+    }),
+  }
+);
+
+export const cryptoTools:StructuredTool[] = [
   // Network Tools
   getChainInfoTool,
   getSupportedNetworksTool,
@@ -1663,7 +1747,16 @@ const toolsList = [
   // Crypto Market Data Tools
   getCryptoMarketDataTool,
   simulateDCAStrategyTool,
-  simulateLumpSumStrategyTool
+  simulateLumpSumStrategyTool,
+
 ];
 
-export default toolsList;
+export const databaseTools: StructuredTool[] = [
+    trackRecordsTool,
+]
+
+export const twitterTools:StructuredTool[] = [
+    LatestTwitterTweetsTool,
+  TopTwitterTweetsTool,
+]
+

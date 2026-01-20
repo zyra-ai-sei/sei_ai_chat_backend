@@ -12,7 +12,7 @@ export class UserOp {
 
   async getUserById(id: string): Promise<User | null> {
     try {
-      const result = await UserData.findOne({ address: id as String }).lean();
+      const result = await UserData.findOne({ userId: id as String }).lean();
       if (!result) {
         return null;
       }
@@ -24,8 +24,11 @@ export class UserOp {
 
   async userExists(address: string): Promise<boolean> {
     try {
-      const exists = await UserData.exists({ address: address as String });
-      return exists !== null;
+      let exists = await UserData.exists({ injectedAddress: address as String });
+      if(exists == null) {
+        exists = await UserData.exists({embeddedAddress: address as String});
+      }
+      return exists != null;
     } catch (err) {
       console.error("Error checking user existence:", err);
       return false;
@@ -49,7 +52,7 @@ export class UserOp {
 
   async getUserTransactions(id: string) : Promise<Transaction[]> {
     try{
-      const user = await UserData.findOne({address: id}).lean();
+      const user = await UserData.findOne({userId: id}).lean();
       if(!user) throw new Error("No user found");
       const result = await TransactionData.find({user: user._id}).sort({timestamp: -1}).lean();
       return result as Transaction[];
@@ -71,23 +74,22 @@ export class UserOp {
   }
 
   async updateUserData(
-    userAddress: string,
+    userId: string,
     userData: Partial<User>
   ): Promise<boolean> {
     try {
-      await UserData.updateOne({ address: userAddress }, userData, {
+      await UserData.updateOne({ userId: userId }, userData, {
         upsert: true,
       });
       return true;
     } catch (err) {
-      // console.log('error in registering the user',err)
       throw new Error("Error in registering the user");
     }
   }
 
-  async updateUserHistory(userAddress: string, chats: Chat[]) {
+  async updateUserHistory(userId: string, chats: Chat[]) {
     try {
-      const user = await UserData.findOne({ address: userAddress });
+      const user = await UserData.findOne({ userId: userId });
       if (!user) return;
 
       // Upsert history document
@@ -114,14 +116,15 @@ export class UserOp {
     }
   }
 
-  async updateUserTransaction(userAddress: string, txData: Partial<Transaction>) {
+  async updateUserTransaction(userId: string, txData: Partial<Transaction>) {
     try{
-      const user = await UserData.findOne({address: userAddress});
+      const user = await UserData.findOne({userId: userId});
       if(!user) return;
       console.log('this is txData',txData)
       const transaction = await TransactionData.create({
         ...txData,
         user:user._id,
+        status: txData.status || 'PENDING'
       })
       transaction.save();
       return transaction.toObject();
@@ -130,10 +133,36 @@ export class UserOp {
     }
   }
 
+  async getPendingTransactions(): Promise<any[]> {
+    try {
+      return await TransactionData.find({ status: 'PENDING' }).lean();
+    } catch (err) {
+      console.error("Error fetching pending transactions:", err);
+      return [];
+    }
+  }
+
+  async updateTransactionStatus(hash: string, status: string, blockNumber?: string, gasUsed?: string, functionName?: string): Promise<boolean> {
+    try {
+      const update: any = { status };
+      if (blockNumber) update.blockNumber = blockNumber;
+      if (gasUsed) update.gas = gasUsed;
+      if (functionName) update.functionName = functionName;
+      
+      await TransactionData.updateOne({ hash }, update);
+      return true;
+    } catch (err) {
+      console.error(`Error updating transaction ${hash}:`, err);
+      return false;
+    }
+  }
+
   transformUserData(userData: any): User {
     return {
       _id: userData?._id,
-      address: userData.address,
+      injectedAddress: userData.injectedAddress,
+      userId: userData.userId,
+      embeddedAddress: userData.embeddedAddress,
       history: userData?.history,
     };
   }

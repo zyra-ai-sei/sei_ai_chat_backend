@@ -21,12 +21,15 @@ const transactionSchema = new Schema({
     input:{type:String},
     blockNumber:{type:String},
     orderId:{type:String, required:false},
+    network: {type: String},
+    functionName: {type: String},
 },
 {
     timestamps:true,
 });
 
 transactionSchema.index({user:1});
+transactionSchema.index({status: 1});
 
 export type ITransaction = Transaction & Document & SchemaTimestampsConfig ;
 

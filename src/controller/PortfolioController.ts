@@ -5,36 +5,46 @@ import { PortfolioService } from "../services/PortfolioService";
 import { AuthenticatedRequest } from "../types/requestTypes";
 import { Address } from "viem";
 
-
 @controller("/portfolio", TYPES.AuthMiddleware)
 export class PortfolioController {
-    constructor(
-        @inject(TYPES.PortfolioService) private portfolioService: PortfolioService
-    ) {
+  constructor(
+    @inject(TYPES.PortfolioService) private portfolioService: PortfolioService
+  ) {}
 
-    }
-
-    @httpGet('/totalBalance/')
-    async getTotalBalance(
-        @request() req: AuthenticatedRequest
+  @httpGet("/totalBalance/")
+  async getTotalBalance(@request() req: AuthenticatedRequest) {
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
     ) {
-        const address = req.userAddress;
-        return this.portfolioService.getTotalBalance(address as Address);
+      throw new Error(`User request not authorized`);
     }
+    return this.portfolioService.getTotalBalance(address as Address);
+  }
 
-    @httpGet('/defiPositions')
-    async getDefiPositions(
-        @request() req: AuthenticatedRequest
+  @httpGet("/defiPositions")
+  async getDefiPositions(@request() req: AuthenticatedRequest) {
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
     ) {
-        const address = req.userAddress;
-        return this.portfolioService.getDefiPositions(address as Address);
+      console.log('addresses',req.injectedAddress)
+      throw new Error(`User request not authorized`);
     }
+    return this.portfolioService.getDefiPositions(address as Address);
+  }
 
-    @httpGet('/summary')
-    async getSummary(
-        @request() req: AuthenticatedRequest
+  @httpGet("/summary")
+  async getSummary(@request() req: AuthenticatedRequest) {
+    const address = req.query.address;
+    if (
+      !(address == req.embeddedAddress) &&
+      !(address == req.injectedAddress)
     ) {
-        const address = req.userAddress;
-        return this.portfolioService.getWalletSummary(address as Address)
+      throw new Error(`User request not authorized`);
     }
+    return this.portfolioService.getWalletSummary(address as Address);
+  }
 }

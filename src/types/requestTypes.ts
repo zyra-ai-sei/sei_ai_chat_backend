@@ -6,7 +6,8 @@ export enum Sort {
 }
 
 export type AuthenticatedRequest = Request & {
-    userAddress: string
+    embeddedAddress: string
+    injectedAddress: string
     userId:string
 }
 

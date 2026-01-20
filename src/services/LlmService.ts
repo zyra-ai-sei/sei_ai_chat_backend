@@ -8,21 +8,27 @@ import { UserService } from "./UserService";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { ChatOpenAI, ChatOpenAICallOptions } from "@langchain/openai";
+import { HumanMessage, SystemMessage, trimMessages } from "@langchain/core/messages";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
-import toolsList from "../tools/langGraphTools";
-import { getSystemPrompt } from "../utils/prompts";
+import {
+  cryptoTools,
+  databaseTools,
+  twitterTools,
+} from "../tools/langGraphTools";
+import { getGeneralSystemPrompt, TrackingSystemPrompt } from "../utils/prompts";
 import fs, { mkdirSync, writeFileSync } from "fs";
 import { json } from "stream/consumers";
 import path from "path";
+import { randomUUID } from "crypto";
+import { LanguageModelLike } from "@langchain/core/language_models/base";
 
 @injectable()
 export class LlmService implements ILlmService {
-  private genAI: any;
+  private genAI: LanguageModelLike;
   private model: string;
   private sessionId: string;
   private mongoClient: MongoClient;
@@ -38,9 +44,9 @@ export class LlmService implements ILlmService {
     // });
 
     this.genAI = new ChatOpenAI({
-      model:'gpt-4.1-mini',
-      apiKey: env.OPENAI_API_KEY
-    })
+      model: "gpt-5-mini-2025-08-07",
+      apiKey: env.OPENAI_API_KEY,
+    });
 
     // Initialize MongoDB client once with connection pooling
     this.mongoClient = new MongoClient(env.MONGO_URI, {
@@ -53,17 +59,21 @@ export class LlmService implements ILlmService {
     this.checkpointer = new MongoDBSaver({ client: this.mongoClient });
   }
 
-  async clearChat(address: string) {
-    await this.checkpointer.deleteThread(address);
+  async clearChat(userId: string) {
+    await this.checkpointer.deleteThread(userId);
   }
 
-  async getChatHistory(address: string, network: string): Promise<any> {
+  async getChatHistory(
+    userId: string,
+    address: string,
+    network: string,
+  ): Promise<any> {
     try {
       const chat = await this.initChat(address, network);
       if (!chat) throw new Error("Chat session not initialized");
 
       const initialState = await chat.getState({
-        configurable: { thread_id: address },
+        configurable: { thread_id: userId },
       });
 
       const state = initialState?.values?.messages || [];
@@ -95,7 +105,7 @@ export class LlmService implements ILlmService {
                 Array.isArray(parsedContent.content)
               ) {
                 const textItem = parsedContent.content.find(
-                  (item: any) => item.type === "text"
+                  (item: any) => item.type === "text",
                 );
                 displayText = textItem
                   ? textItem.text
@@ -136,7 +146,7 @@ export class LlmService implements ILlmService {
                     parsedContent.toolName,
                   timestamp:
                     parsedContent.timestamp || new Date().toISOString(),
-                  data_output:dataOutput,
+                  data_output: dataOutput,
                 };
             } catch (parseError) {
               console.warn("Failed to parse tool message content:", parseError);
@@ -167,11 +177,12 @@ export class LlmService implements ILlmService {
    * Update a specific message by its execution ID in tool_output
    */
   async updateMessageById(
+    userId: string,
     address: string,
     network: string,
     executionId: string,
     executionState: "completed" | "pending" | "failed",
-    txnHash?: string
+    txnHash?: string,
   ): Promise<boolean> {
     try {
       // Get the chat agent (same way as getChatHistory)
@@ -182,7 +193,7 @@ export class LlmService implements ILlmService {
 
       // Get current state
       const currentState = await chat.getState({
-        configurable: { thread_id: address },
+        configurable: { thread_id: userId },
       });
 
       if (!currentState?.values?.messages) {
@@ -207,7 +218,7 @@ export class LlmService implements ILlmService {
 
               // Find the output with the matching executionId
               const outputIndex = toolOutputs.findIndex(
-                (output: any) => output.executionId === executionId
+                (output: any) => output.executionId === executionId,
               );
 
               if (outputIndex !== -1) {
@@ -249,19 +260,15 @@ export class LlmService implements ILlmService {
 
       if (!messageUpdated) {
         console.log(
-          `No tool output found with executionId ${executionId} for address: ${address}`
+          `No tool output found with executionId ${executionId} for userId: ${userId}`,
         );
         return false;
       }
 
       // Update the state back to the graph
       await chat.updateState(
-        { configurable: { thread_id: address } },
-        { messages: messages }
-      );
-
-      console.log(
-        `Successfully updated executionId ${executionId} to ${executionState} for address ${address}`
+        { configurable: { thread_id: userId } },
+        { messages: messages },
       );
       return true;
     } catch (error) {
@@ -283,98 +290,82 @@ export class LlmService implements ILlmService {
     }
   }
 
-  // private async sanitizeHistory(address: string): Promise<void> {
-  //   try {
-  //     const config = { configurable: { thread_id: address } };
-  //     const checkpointTuple = await this.checkpointer.getTuple(config);
-
-  //     if (!checkpointTuple?.checkpoint) return;
-
-  //     const checkpoint = checkpointTuple.checkpoint;
-  //     const messages = checkpoint.channel_values?.messages;
-
-  //     if (!Array.isArray(messages)) return;
-
-  //     let hasChanges = false;
-  //     const sanitizedMessages = messages.map((msg: any) => {
-  //       // Check for SystemMessage (either by class name or type property)
-  //       const isSystemMessage =
-  //         msg.constructor.name === "SystemMessage" ||
-  //         msg.type === "system" ||
-  //         (msg.lc_id && msg.lc_id.includes("SystemMessage"));
-
-  //       if (isSystemMessage) {
-  //         hasChanges = true;
-  //         // Convert to HumanMessage with system type flag
-  //         // We need to preserve the ID and content
-  //         return new HumanMessage({
-  //           content: msg.content,
-  //           additional_kwargs: { ...msg.additional_kwargs, type: "system" },
-  //           id: msg.id,
-  //           name: msg.name,
-  //         });
-  //       }
-  //       return msg;
-  //     });
-
-  //     if (hasChanges) {
-  //       const newCheckpoint = {
-  //         ...checkpoint,
-  //         channel_values: {
-  //           ...checkpoint.channel_values,
-  //           messages: sanitizedMessages,
-  //         },
-  //       };
-
-  //       // We need to provide newVersions, but since we are just modifying existing messages in place
-  //       // without changing the structure significantly, we might be able to reuse existing versions or pass empty.
-  //       // However, LangGraph might expect versions.
-  //       // For safety, we can try to pass the existing versions if available, or empty object.
-  //       // The put method signature: put(config, checkpoint, metadata, newVersions)
-
-  //       // We'll use the parent config from the tuple if available, or the config we created
-  //       const writeConfig = checkpointTuple.config || config;
-
-  //       await this.checkpointer.put(
-  //         writeConfig,
-  //         newCheckpoint,
-  //         checkpointTuple.metadata
-  //       );
-  //     }
-  //   } catch (error) {
-  //     console.error("Error sanitizing history:", error);
-  //     // Don't throw, just log, so we don't block execution if this fails
-  //   }
-  // }
-
   // Initialize and store a chat session for a sessionId (generate if not provided)
   async initChat(address: string, network: string): Promise<any> {
-    const convertedLangGraphTools = toolsList;
-    let langGraphTools: StructuredTool[] = convertedLangGraphTools;
-    console.log('this is my fukking chain',network)
-    // Use the pooled checkpointer
+    console.log("reached initChat");
+
+    const allTools = [...cryptoTools, ...databaseTools, ...twitterTools];
+
     const agent = createReactAgent({
       llm: this.genAI,
-      tools: langGraphTools,
-      stateModifier: getSystemPrompt(address, network),
+      tools: allTools,
       checkpointSaver: this.checkpointer,
+      stateModifier: async (state: any) => {
+        const systemPrompt = getGeneralSystemPrompt(address, network);
+        const messages = state.messages;
+        
+        // 1. Minimum messages to trigger truncation (e.g., keep last 20)
+        const K = 20;
+        
+        if (messages.length <= K) {
+          return [new SystemMessage(systemPrompt), ...messages];
+        }
+
+        // 2. Start looking back from the K-th message from the end
+        let sliceIndex = messages.length - K;
+
+        // 3. CRITICAL: Walk backwards until we find a HumanMessage.
+        // This ensures the history the model sees always starts with a fresh user intent,
+        // and automatically includes all associated AI thoughts and Tool results that followed it.
+        while (sliceIndex > 0 && messages[sliceIndex].constructor.name !== "HumanMessage") {
+          sliceIndex--;
+        }
+
+        // 4. Return system prompt + the safe windowed slice
+        return [
+          new SystemMessage(systemPrompt),
+          ...messages.slice(sliceIndex)
+        ];
+      },
+    });
+
+    return agent;
+  }
+
+  async initStatelessChat(systemPrompt: string) {
+    const agent = createReactAgent({
+      llm: this.genAI,
+      tools: databaseTools,
+      stateModifier: systemPrompt,
     });
     return agent;
   }
 
+  async statelessChat(prompt: string, trackedAddress: string) {
+    const systemPrompt = TrackingSystemPrompt(trackedAddress);
+
+    const chat = await this.initStatelessChat(systemPrompt);
+
+    const response = await chat.invoke(
+      { messages: [prompt] }, // Use the actual prompt instead of hardcoded message
+      { configurable: { thread_id: randomUUID() } }, // Use address as thread_id
+    );
+
+    return response.messages;
+  }
+
   async *streamMessage(
     prompt: string,
+    userId: string,
     address: string,
     network: string,
     abortSignal?: AbortSignal,
-    messageType: "human" | "system" = "human"
+    messageType: "human" | "system" = "human",
   ): AsyncGenerator<LlmStreamChunk> {
-
-
     try {
       // await this.sanitizeHistory(address);
       const chat = await this.initChat(address, network);
-
+      console.log("reached chat creating", prompt);
       if (!chat) {
         throw new Error("Chat session not initialized");
       }
@@ -390,18 +381,16 @@ export class LlmService implements ILlmService {
       const stream = chat.streamEvents(
         { messages: [message] },
         {
-          configurable: { thread_id: address },
+          configurable: { thread_id: userId },
           version: "v2",
           // signal: controller.signal,
-        }
+        },
       );
 
       let toolIndex = 0;
       const seenToolCalls = new Set<string>();
 
       for await (const event of stream) {
-          
-
         // Handle streaming text chunks from the model
         if (event.event === "on_chat_model_stream") {
           const chunk = event.data?.chunk;
@@ -460,7 +449,7 @@ export class LlmService implements ILlmService {
               if (parsed.tool_output) {
                 toolOutput = this.normalizeToolOutputs(
                   parsed.tool_output,
-                  toolIndex
+                  toolIndex,
                 );
               }
 
@@ -468,7 +457,7 @@ export class LlmService implements ILlmService {
                 const fallbackContent = this.safeJsonParse(toolContent);
                 toolOutput = this.normalizeToolOutputs(
                   fallbackContent,
-                  toolIndex
+                  toolIndex,
                 );
               }
 
@@ -493,10 +482,22 @@ export class LlmService implements ILlmService {
         }
       }
     } catch (error: any) {
-      
+      console.error("Error in streamMessage:", error);
+
+      if (error.status === 429 || error.lc_error_code === "MODEL_RATE_LIMIT") {
+        yield {
+          type: "token",
+          text: "\n\n⚠️ **Rate limit reached.** The conversation history has become too large or too many requests were sent. Please wait a moment or try clearing the chat history.",
+        } as LlmStreamChunk;
+      } else {
+        yield {
+          type: "token",
+          text: "\n\n❌ **Error:** I encountered an issue while processing your request. Please try again later.",
+        } as LlmStreamChunk;
+      }
     } finally {
       // Clean up the active stream controller
-      this.activeStreams.delete(address);
+      this.activeStreams.delete(userId);
     }
   }
 
@@ -505,115 +506,130 @@ export class LlmService implements ILlmService {
     prompt: string,
     address: string,
     network: string,
-    messageType: "human" | "system" = "human"
+    messageType: "human" | "system" = "human",
   ): Promise<string | object> {
-    // if (!this.mcpService.isConnected()) {
-    //   await this.mcpService.connectToMCP();
-    // }
-    //only initialize if needed
-    // await this.sanitizeHistory(address);
-    const chat = await this.initChat(address, network);
+    try {
+      // if (!this.mcpService.isConnected()) {
+      //   await this.mcpService.connectToMCP();
+      // }
+      //only initialize if needed
+      // await this.sanitizeHistory(address);
+      const chat = await this.initChat(address, network);
 
-    if (!chat) throw new Error("Chat session not initialized");
+      if (!chat) throw new Error("Chat session not initialized");
 
-    const initialState = await chat.getState({
-      configurable: { thread_id: address },
-    });
-    console.log("hi");
-    console.dir(initialState);
+      const initialState = await chat.getState({
+        configurable: { thread_id: address },
+      });
 
-    const message =
-      messageType === "system"
-        ? new HumanMessage({
-            content: prompt,
-            additional_kwargs: { type: "system" },
-          })
-        : new HumanMessage(prompt);
+      const message =
+        messageType === "system"
+          ? new HumanMessage({
+              content: prompt,
+              additional_kwargs: { type: "system" },
+            })
+          : new HumanMessage(prompt);
 
-    const agentFinalState = await chat.invoke(
-      { messages: [message] }, // Use the actual prompt instead of hardcoded message
-      { configurable: { thread_id: address } } // Use address as thread_id
-    );
+      const agentFinalState = await chat.invoke(
+        { messages: [message] }, // Use the actual prompt instead of hardcoded message
+        { configurable: { thread_id: address } }, // Use address as thread_id
+      );
 
-    const newMessages = initialState?.values?.messages
-      ? agentFinalState.messages.slice(initialState.values.messages.length)
-      : agentFinalState.messages;
+      const newMessages = initialState?.values?.messages
+        ? agentFinalState.messages.slice(initialState.values.messages.length)
+        : agentFinalState.messages;
 
-    const res = {
-      chat: newMessages[newMessages.length - 1].content,
-      tools: newMessages
-        .filter((msg: any) => msg.constructor.name === "ToolMessage")
-        .map((msg: any, toolIndex: number) => {
-          try {
-            // Parse the JSON string content
-            const parsed = JSON.parse(msg.content);
+      const res = {
+        chat: newMessages[newMessages.length - 1].content,
+        tools: newMessages
+          .filter((msg: any) => msg.constructor.name === "ToolMessage")
+          .map((msg: any, toolIndex: number) => {
+            try {
+              // Parse the JSON string content
+              const parsed = JSON.parse(msg.content);
 
-            if (parsed && typeof parsed === "object") {
-              // MCP tool response structure
-              const mcpResponse = parsed;
-              let content = "";
+              if (parsed && typeof parsed === "object") {
+                // MCP tool response structure
+                const mcpResponse = parsed;
+                let content = "";
 
-              // Extract text from content array
-              if (
-                mcpResponse &&
-                typeof mcpResponse === "object" &&
-                mcpResponse.content &&
-                Array.isArray(mcpResponse.content) &&
-                mcpResponse.content.length > 0
-              ) {
-                const textItem = mcpResponse.content.find(
-                  (item: any) => item.type === "text"
-                );
-                content = textItem
-                  ? textItem.text
-                  : JSON.stringify(mcpResponse.content);
-              } else {
-                content = JSON.stringify(mcpResponse);
-              }
+                // Extract text from content array
+                if (
+                  mcpResponse &&
+                  typeof mcpResponse === "object" &&
+                  mcpResponse.content &&
+                  Array.isArray(mcpResponse.content) &&
+                  mcpResponse.content.length > 0
+                ) {
+                  const textItem = mcpResponse.content.find(
+                    (item: any) => item.type === "text",
+                  );
+                  content = textItem
+                    ? textItem.text
+                    : JSON.stringify(mcpResponse.content);
+                } else {
+                  content = JSON.stringify(mcpResponse);
+                }
 
-              // Extract tool_output and add ID
-              const toolOutput =
-                parsed.tool_output ||
-                (mcpResponse && typeof mcpResponse === "object"
-                  ? mcpResponse.tool_output
-                  : undefined);
-              if (toolOutput && typeof toolOutput === "object") {
-                toolOutput.id = toolIndex;
-              }
+                // Extract tool_output and add ID
+                const toolOutput =
+                  parsed.tool_output ||
+                  (mcpResponse && typeof mcpResponse === "object"
+                    ? mcpResponse.tool_output
+                    : undefined);
+                if (toolOutput && typeof toolOutput === "object") {
+                  toolOutput.id = toolIndex;
+                }
 
-              if (toolOutput?.transaction || JSON.parse(content)?.transaction) {
+                if (
+                  toolOutput?.transaction ||
+                  JSON.parse(content)?.transaction
+                ) {
+                  return {
+                    id: toolIndex,
+                    content: content,
+                    tool_output: toolOutput ? toolOutput : JSON.parse(content),
+                  };
+                }
                 return {
                   id: toolIndex,
                   content: content,
-                  tool_output: toolOutput ? toolOutput : JSON.parse(content),
+                  tool_output: undefined,
+                };
+              } else {
+                // Fallback
+                return {
+                  id: toolIndex,
+                  content: msg.content || "",
+                  tool_output: undefined,
                 };
               }
-              return {
-                id: toolIndex,
-                content: content,
-                tool_output: undefined,
-              };
-            } else {
-              // Fallback
+            } catch (error) {
+              // If parsing fails, return as-is
               return {
                 id: toolIndex,
                 content: msg.content || "",
                 tool_output: undefined,
               };
             }
-          } catch (error) {
-            // If parsing fails, return as-is
-            return {
-              id: toolIndex,
-              content: msg.content || "",
-              tool_output: undefined,
-            };
-          }
-        })
-        .filter((msg: any) => msg != null),
-    };
+          })
+          .filter((msg: any) => msg != null),
+      };
 
-    return res;
+      return res;
+    } catch (error: any) {
+      console.error("Error in sendMessage:", error);
+      if (error.status === 429 || error.lc_error_code === "MODEL_RATE_LIMIT") {
+        return {
+          chat: "⚠️ **Rate limit reached.** The conversation history has become too large. Please try clearing the chat history.",
+          tools: [],
+        };
+      }
+      return {
+        chat: "❌ **Error:** I encountered an issue while processing your request.",
+        tools: [],
+      };
+    }
   }
 
   private normalizeToolOutputs(rawOutput: any, startIndex: number): any[] {
@@ -634,7 +650,7 @@ export class LlmService implements ILlmService {
         return undefined;
       })
       .filter((item): item is Record<string, any> =>
-        Boolean(item && typeof item === "object" && item.transaction)
+        Boolean(item && typeof item === "object" && item.transaction),
       );
   }
 

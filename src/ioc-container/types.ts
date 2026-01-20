@@ -9,6 +9,9 @@ export const TYPES = {
     Hello: Symbol.for('Hello'),
     StrategyController: Symbol.for("StrategyController"),
     OrderController: Symbol.for("OrderController"),
+    TokenTrackingController: Symbol.for("TokenTrackingController"),
+    PortfolioSummaryController: Symbol.for('PortfolioSummaryController'),
+    AddressActivitySummaryController: Symbol.for('AddressActivitySummaryController'),
 
     // services
     AuthService: Symbol.for('AuthService'),
@@ -22,6 +25,10 @@ export const TYPES = {
     TwapEventService: Symbol.for('TwapEventService'),
     CronService: Symbol.for('CronService'),
     OrderService: Symbol.for('OrderService'),
+    TokenTrackingService: Symbol.for('TokenTrackingService'),
+    SocketService: Symbol.for('SocketService'),
+    PortfolioSummaryService: Symbol.for('PortfolioSummaryService'),
+    AddressActivitySummaryService: Symbol.for('AddressActivitySummaryService'),
 
     // database
     UserOp: Symbol.for('UserOp'),
