@@ -25,4 +25,6 @@ export type Transaction = {
   input: string;
   blockNumber: string;
   orderId?: string;
+  network: string;
+  functionName?: string;
 }

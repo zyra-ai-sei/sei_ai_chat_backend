@@ -53,16 +53,24 @@ export class UserService {
     return result;
   }
 
-  async addUserTransaction(address: string, transaction: Partial<Transaction>) {
+  async addUserTransaction(userId: string, transaction: Partial<Transaction>) {
     const result = await this.userOp.updateUserTransaction(
-      address,
+      userId,
       transaction
     );
     return result;
   }
 
-  async getUserTransactions(address: string) {
-    const userTransactions = await this.userOp.getUserTransactions(address);
+  async getUserTransactions(userId: string) {
+    const userTransactions = await this.userOp.getUserTransactions(userId);
     return userTransactions;
+  }
+
+  async getPendingTransactions() {
+    return await this.userOp.getPendingTransactions();
+  }
+
+  async updateTransactionStatus(hash: string, status: string, blockNumber?: string, gasUsed?: string, functionName?: string) {
+    return await this.userOp.updateTransactionStatus(hash, status, blockNumber, gasUsed, functionName);
   }
 }

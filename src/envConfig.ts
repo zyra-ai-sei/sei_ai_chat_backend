@@ -21,6 +21,7 @@ const env = cleanEnv(process.env, {
   PRIVY_APP_SECRET: str(),
   PRIVY_APP_ID: str(),
   PRIVY_VERIFICATION_KEY: str(),
+  TWITTER_API_KEY: str(),
 });
 
 export default env;

@@ -17,6 +17,7 @@ export class TransactionController {
     @request() req: AuthenticatedRequest & NetworkRequest
   ) {
     const { txHash } = req.query;
+    const userId = req.userId;
     const address = req.query.address;
     if (
       !(address == req.embeddedAddress) &&
@@ -26,7 +27,7 @@ export class TransactionController {
     }
     const network = req.network;
     return await this.transactionService.addTransaction(
-      address,
+      userId,
       String(txHash),
       network
     );

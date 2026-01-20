@@ -12,6 +12,9 @@ import { parseDeadlineToTimestamp } from "./core/helper";
 import { parseUnits } from "ethers";
 import {tokenMappings} from "./utils/coingeckoTokenMappings"
 import env from "../envConfig";
+import { getTrackedTransfers } from "./database/services";
+import { getLatestTwitterTweets, getTopTwitterTweets } from "./twitter/services";
+import { StructuredTool } from "langchain";
 
 // Interface for LangChain tool function
 interface LangChainTool {
@@ -650,7 +653,6 @@ export const approveTokenSpendingTool = langchainTools.tool(
       );
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
         executionId: result.executionId,
       };
@@ -702,7 +704,6 @@ export const approveErc20Tool = langchainTools.tool(
       );
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
       };
     } catch (error) {
@@ -958,7 +959,6 @@ export const wrapSeiTool = langchainTools.tool(
       const result = await services.buildDepositSEITx(amount, network);
 
       return {
-        text: JSON.stringify(result, null, 2),
         tool_output: [result],
       };
     } catch (error) {
@@ -1419,7 +1419,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
       return {
         text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
         data_output: {
-          type: "crypto_market_data",
+          type: "CRYPTO_MARKET_DATA",
           coinId: completeCoinData.id,
           symbol: completeCoinData.symbol,
           name: completeCoinData.name,
@@ -1496,9 +1496,7 @@ export const simulateDCAStrategyTool = langchainTools.tool(
 
       // Your tools MUST return JSON as string in the "text" field
       return {
-        text: JSON.stringify(response?.data?.summary, null, 2),
         data_output: {
-          type: "dca_strategy",
           ...response.data,
         },
       };
@@ -1552,12 +1550,8 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
       });
 
       return {
-        // LLM MUST receive JSON string here
-        text: JSON.stringify(response?.data?.summary, null, 2),
-
         // Zyra frontend receives rich data here
         data_output: {
-          type: "lump_sum_strategy",
           ...response.data,
         },
       };
@@ -1588,8 +1582,115 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
     }),
   }
 );
+export const trackRecordsTool = langchainTools.tool(
+  async ({
+    address
+  }: {
+    address:string
+  }) => {
+    try {
+     
 
-const toolsList = [
+      const response = await getTrackedTransfers(address);
+
+      return {
+        // LLM MUST receive JSON string here
+        text: JSON.stringify(response, null, 2),
+      };
+    } catch (error: any) {
+      return {
+        text: `Error tracking transactions for ${address}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "trackRecords",
+    description:
+      "Get transaction records of an address. This tool is used to get previous transaction records of an address accross multiple chains at once.",
+    schema: z.object({
+      address: z.string().describe("records of this address would be tracked"),
+    }),
+  }
+);
+
+
+export const LatestTwitterTweetsTool = langchainTools.tool(
+  async ({
+    topic
+  }: {
+    topic:string
+  }) => {
+    try {
+     
+      const response = await getLatestTwitterTweets(topic);
+      return {
+        text:'Latest twitter posts have been fetched',
+        // LLM MUST receive JSON string here
+          data_output: {
+          ...response
+        },
+      };
+    } catch (error: any) {
+      return {
+        text: `Error in fetching twitter feeds for ${topic}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "FetchLatestTwitterTweets",
+    description:
+      "Get latest twitter(X) tweets for a given topic",
+    schema: z.object({
+      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
+    }),
+  }
+);
+
+export const TopTwitterTweetsTool = langchainTools.tool(
+  async ({
+    topic
+  }: {
+    topic:string
+  }) => {
+    try {
+     
+
+      const response = await getTopTwitterTweets(topic);
+
+       return {
+          data_output: {
+          ...response,
+        },
+      };
+    } catch (error: any) {
+      return {
+        text: `Error in fetching twitter feeds for ${topic}: ${
+          error?.response?.data?.detail || error.message
+        }`,
+        isError: true,
+      };
+    }
+  },
+
+  {
+    name: "FetchTopTwitterTweets",
+    description:
+      "Get Top twitter(X) tweets for a given topic",
+    schema: z.object({
+      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
+    }),
+  }
+);
+
+export const cryptoTools:StructuredTool[] = [
   // Network Tools
   getChainInfoTool,
   getSupportedNetworksTool,
@@ -1645,7 +1746,16 @@ const toolsList = [
   // Crypto Market Data Tools
   getCryptoMarketDataTool,
   simulateDCAStrategyTool,
-  simulateLumpSumStrategyTool
+  simulateLumpSumStrategyTool,
+
 ];
 
-export default toolsList;
+export const databaseTools: StructuredTool[] = [
+    trackRecordsTool,
+]
+
+export const twitterTools:StructuredTool[] = [
+    LatestTwitterTweetsTool,
+  TopTwitterTweetsTool,
+]
+

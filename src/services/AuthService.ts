@@ -12,6 +12,7 @@ import { PrivyClient } from "@privy-io/node";
 @injectable()
 export class AuthService {
   private privy: PrivyClient;
+  private verificationKey: String;
   constructor(
     @inject(TYPES.UserOp) private userOp: UserOp,
     @inject(TYPES.RedisService) private redisService: RedisService
@@ -21,60 +22,72 @@ export class AuthService {
       appSecret: env.PRIVY_APP_SECRET,
       jwtVerificationKey: env.PRIVY_VERIFICATION_KEY,
     });
+    this.verificationKey = env.PRIVY_VERIFICATION_KEY;
   }
 
   async login(
     userId,
-    injectedAddress: string,
     embeddedAddress: string,
+    injectedAddress: string,
     token: string
   ): Promise<boolean> {
     let verifiedClaims;
     try {
-      verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
+      const key = this.verificationKey.replace(/\\n/g, "\n");
+      verifiedClaims = jwt.verify(token, key, {
+        issuer: "privy.io",
+        audience: env.PRIVY_APP_ID /* your Privy App ID */,
+      });
+      
     } catch (err) {
       throw new Error(`Unverifieble token !`);
     }
 
-    if (verifiedClaims.user_id != userId) {
+    if (verifiedClaims.sub != userId) {
       throw new Error(`Invalid user token`);
     }
+
+    // Normalize addresses to checksummed format
+    const normalizedInjected = injectedAddress ? ethers.getAddress(injectedAddress) : "";
+    const normalizedEmbedded = embeddedAddress ? ethers.getAddress(embeddedAddress) : "";
 
     let userData = await this.userOp.getUserById(userId);
 
     if (!userData || !userData?._id) {
       await this.userOp.updateUserData(userId, {
         userId: userId,
-        injectedAddress,
-        embeddedAddress,
+        injectedAddress: normalizedInjected,
+        embeddedAddress: normalizedEmbedded,
       });
       userData = await this.userOp.getUserById(userId);
     }
-    
     // Store data against userId with 1 month TTL (30 days * 24 hours * 60 minutes * 60 seconds)
-    const oneMonthInSeconds = 30 * 24 * 60 * 60;
+    const oneMonthInSeconds = 90 * 24 * 60 * 60;
     const redisValue = JSON.stringify({
-      embeddedAddress: embeddedAddress || '',
-      injectedAddress: injectedAddress || ''
+      embeddedAddress: normalizedEmbedded,
+      injectedAddress: normalizedInjected,
     });
-    
-    await this.redisService.setValue(
-      userId,
-      redisValue,
-      oneMonthInSeconds
-    );
+
+    await this.redisService.setValue(userId, redisValue, oneMonthInSeconds);
 
     return true;
   }
 
-  async verifyUserSession(authHeader?: string): Promise<{ userId: string, embeddedAddress: string, injectedAddress:string }> {
-    const { userId, embeddedAddress, injectedAddress } = await this.verifyAuthToken(authHeader);
+  async verifyUserSession(authHeader?: string): Promise<{
+    userId: string;
+    embeddedAddress: string;
+    injectedAddress: string;
+  }> {
+    const { userId, embeddedAddress, injectedAddress } =
+      await this.verifyAuthToken(authHeader);
     return { userId, embeddedAddress, injectedAddress };
   }
 
-  private async verifyAuthToken(
-    authHeader?: string
-  ): Promise<{ userId: string; embeddedAddress: string, injectedAddress: string }> {
+  private async verifyAuthToken(authHeader?: string): Promise<{
+    userId: string;
+    embeddedAddress: string;
+    injectedAddress: string;
+  }> {
     if (!authHeader?.startsWith("Bearer ")) {
       throw new Error("Invalid Authorization Header");
     }
@@ -84,29 +97,35 @@ export class AuthService {
     // First verify the token
     let verifiedClaims;
     try {
-      verifiedClaims = await this.privy.utils().auth().verifyAuthToken(token);
-    } catch (error: any) {
+ const key = this.verificationKey.replace(/\\n/g, "\n");
+      verifiedClaims = jwt.verify(token, key, {
+        issuer: "privy.io",
+        audience: env.PRIVY_APP_ID /* your Privy App ID */,
+      });
+          } catch (error: any) {
       throw new Error("Token has expired or is invalid");
     }
 
-    console.log('verified claims',verifiedClaims)
-
     // Get userId from the verified token claims
-    const userId = verifiedClaims.user_id;
-    
+    const userId = verifiedClaims.sub;
+
     // Retrieve user data from Redis using userId
     const redisData = await this.redisService.getValue(userId);
-    
+
     if (!redisData) {
       throw new Error("User session not found. Please login again.");
     }
 
     const { embeddedAddress, injectedAddress } = JSON.parse(redisData);
+    
+    // Normalize addresses to checksummed format on retrieval as well
+    const normalizedEmbedded = embeddedAddress ? ethers.getAddress(embeddedAddress) : "";
+    const normalizedInjected = injectedAddress ? ethers.getAddress(injectedAddress) : "";
 
-    return { 
+    return {
       userId,
-      embeddedAddress: embeddedAddress || "", 
-      injectedAddress: injectedAddress || "" 
+      embeddedAddress: normalizedEmbedded,
+      injectedAddress: normalizedInjected,
     };
   }
 }

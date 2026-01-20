@@ -30,6 +30,7 @@ export class PortfolioController {
       !(address == req.embeddedAddress) &&
       !(address == req.injectedAddress)
     ) {
+      console.log('addresses',req.injectedAddress)
       throw new Error(`User request not authorized`);
     }
     return this.portfolioService.getDefiPositions(address as Address);

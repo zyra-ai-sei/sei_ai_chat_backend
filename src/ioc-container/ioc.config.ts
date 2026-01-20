@@ -28,6 +28,11 @@ import { CronService } from "../jobs/cron";
 import { OrderOp } from "../database/mongo/OrderOp";
 import { OrderService } from "../services/OrderService";
 import { OrderController } from "../controller/OrderController";
+import { TokenTrackingController } from "../controller/TokenTrackingController";
+import { TokenTrackingService } from "../services/TokenTrackingService";
+import { SocketService } from "../services/SocketService";
+import { AddressActivitySummaryController } from "../controller/AddressActivitySummaryController";
+import { AddressActivitySummaryService } from "../services/AddressActivitySummaryService";
 
 const container = new Container();
 
@@ -44,6 +49,8 @@ container
   .bind<PortfolioController>(TYPES.PortfolioController)
   .to(PortfolioController);
 container.bind<OrderController>(TYPES.OrderController).to(OrderController);
+container.bind<TokenTrackingController>(TYPES.TokenTrackingController).to(TokenTrackingController);
+container.bind<AddressActivitySummaryController>(TYPES.AddressActivitySummaryController).to(AddressActivitySummaryController);
 
 container.bind<AuthService>(TYPES.AuthService).to(AuthService);
 container.bind<ILlmService>(TYPES.LlmService).to(LlmService).inSingletonScope();
@@ -55,7 +62,8 @@ container.bind<MCPService>(TYPES.MCPService).to(MCPService).inSingletonScope();
 container.bind<UserService>(TYPES.UserService).to(UserService);
 container
   .bind<TransactionService>(TYPES.TransactionService)
-  .to(TransactionService);
+  .to(TransactionService)
+  .inSingletonScope();
 container
   .bind<ICryptoMarketService>(TYPES.CryptoMarketService)
   .to(CryptoMarketService);
@@ -69,6 +77,9 @@ container
   .to(CronService)
   .inSingletonScope();
 container.bind<OrderService>(TYPES.OrderService).to(OrderService);
+container.bind<TokenTrackingService>(TYPES.TokenTrackingService).to(TokenTrackingService).inSingletonScope();
+container.bind<SocketService>(TYPES.SocketService).to(SocketService).inSingletonScope();
+container.bind<AddressActivitySummaryService>(TYPES.AddressActivitySummaryService).to(AddressActivitySummaryService).inSingletonScope();
 
 container.bind<Hello>(TYPES.Hello).to(Hello);
 container.bind<UserOp>(TYPES.UserOp).to(UserOp);

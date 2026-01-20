@@ -11,6 +11,7 @@ import { Response } from "express";
 import { ILlmService } from "../services/interfaces/ILlmService";
 import AuthMiddleware from "../middleware/AuthMiddleware";
 import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
+import { ethers } from "ethers";
 
 @controller("/llm", TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
 export class LlmController {
@@ -47,7 +48,7 @@ export class LlmController {
     const prompt = Array.isArray(promptParam)
       ? promptParam.join(" ")
       : promptParam;
-    const address = req.query.address;
+    const address = ethers.getAddress(req.query.address as string);
     if (
       !(address == req.embeddedAddress) &&
       !(address == req.injectedAddress)
