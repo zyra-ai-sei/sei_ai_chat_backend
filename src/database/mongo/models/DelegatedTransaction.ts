@@ -27,6 +27,7 @@ export interface IDelegatedTransaction extends Document {
     value?: string;
     data?: string;
     chainId: number;
+    gas?: string;
     gasLimit?: string;
     maxFeePerGas?: string;
     maxPriorityFeePerGas?: string;
@@ -36,6 +37,13 @@ export interface IDelegatedTransaction extends Document {
   executionConditions: {
     // For limit orders: target price
     targetPrice?: number;
+
+    // Price direction for limit orders: 'above' for sell, 'below' for buy
+    priceDirection?: 'above' | 'below';
+
+    // Token symbol for price checking (e.g., 'ethereum', 'bitcoin')
+    targetTokenSymbol?: string;
+
     targetTokenAddress?: string;
 
     // For stop loss: stop price
@@ -46,6 +54,9 @@ export interface IDelegatedTransaction extends Document {
 
     // Expiration time
     expiresAt?: Date;
+
+    // Order ID this order depends on (for linked orders)
+    dependsOn?: string;
 
     // Additional conditions (JSON for flexibility)
     customConditions?: Record<string, any>;
@@ -76,6 +87,9 @@ export interface IDelegatedTransaction extends Document {
 
     // Execution timestamp
     executedAt?: Date;
+
+    // Amount received from execution (for linked orders)
+    executedAmount?: string;
 
     // Error details if failed
     errorMessage?: string;
@@ -124,6 +138,7 @@ const DelegatedTransactionSchema: Schema = new Schema(
       value: { type: String },
       data: { type: String },
       chainId: { type: Number, required: true },
+      gas: { type: String },
       gasLimit: { type: String },
       maxFeePerGas: { type: String },
       maxPriorityFeePerGas: { type: String }
@@ -131,10 +146,13 @@ const DelegatedTransactionSchema: Schema = new Schema(
 
     executionConditions: {
       targetPrice: { type: Number },
+      priceDirection: { type: String, enum: ['above', 'below'] },
+      targetTokenSymbol: { type: String },
       targetTokenAddress: { type: String },
       stopPrice: { type: Number },
       executeAt: { type: Date, index: true },
       expiresAt: { type: Date, index: true },
+      dependsOn: { type: String, index: true },
       customConditions: { type: Schema.Types.Mixed }
     },
 
@@ -149,6 +167,7 @@ const DelegatedTransactionSchema: Schema = new Schema(
       lastAttemptAt: { type: Date },
       transactionHash: { type: String, index: true },
       executedAt: { type: Date },
+      executedAmount: { type: String },
       errorMessage: { type: String },
       errorDetails: { type: Schema.Types.Mixed }
     },

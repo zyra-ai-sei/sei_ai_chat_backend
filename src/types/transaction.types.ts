@@ -77,12 +77,19 @@ export interface DelegatedOrder {
     value?: string;
     data?: string;
     chainId: number;
+    gas?: string;
   };
 
   /** Conditions that trigger execution */
   executionConditions: {
     /** For limit orders: target price */
     targetPrice?: number;
+
+    /** Price direction for limit orders: 'above' for sell, 'below' for buy */
+    priceDirection?: 'above' | 'below';
+
+    /** Token symbol for price checking (e.g., 'ethereum', 'bitcoin') */
+    targetTokenSymbol?: string;
 
     /** For stop loss: stop price */
     stopPrice?: number;
@@ -92,6 +99,12 @@ export interface DelegatedOrder {
 
     /** Expiration time */
     expiresAt?: Date;
+
+    /** Order ID this order depends on (for linked orders like buy->sell) */
+    dependsOn?: string;
+
+    /** Custom conditions for future extensions */
+    customConditions?: Record<string, any>;
   };
 
   /** User's authorization signature for this specific transaction */
@@ -108,6 +121,9 @@ export interface DelegatedOrder {
   /** Execution result */
   transactionHash?: string;
   errorMessage?: string;
+
+  /** Amount received from execution (for linked orders) */
+  executedAmount?: string;
 }
 
 /**

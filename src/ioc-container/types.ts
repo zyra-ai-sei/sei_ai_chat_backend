@@ -25,6 +25,8 @@ export const TYPES = {
     CronService: Symbol.for('CronService'),
     OrderService: Symbol.for('OrderService'),
     PrivyTransactionService: Symbol.for('PrivyTransactionService'),
+    PriceCheckerService: Symbol.for('PriceCheckerService'),
+    OfflineTransactionMonitorService: Symbol.for('OfflineTransactionMonitorService'),
 
     // database
     UserOp: Symbol.for('UserOp'),

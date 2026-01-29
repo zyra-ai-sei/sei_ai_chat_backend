@@ -129,12 +129,19 @@ export class PrivyTransactionController {
         value?: string;
         data?: string;
         chainId: number;
+        gas?: string;
       };
       executionConditions: {
         targetPrice?: number;
+        priceDirection?: 'above' | 'below';
+        targetTokenSymbol?: string;
         stopPrice?: number;
         executeAt?: string;
         expiresAt?: string;
+        dependsOn?: string;
+      };
+      metadata?: {
+        description?: string;
       };
       description?: string;
     }
@@ -157,11 +164,14 @@ export class PrivyTransactionController {
           transactionData: body.transactionData,
           executionConditions: {
             targetPrice: body.executionConditions.targetPrice,
+            priceDirection: body.executionConditions.priceDirection,
+            targetTokenSymbol: body.executionConditions.targetTokenSymbol,
             stopPrice: body.executionConditions.stopPrice,
             executeAt: body.executionConditions.executeAt ? new Date(body.executionConditions.executeAt) : undefined,
-            expiresAt: body.executionConditions.expiresAt ? new Date(body.executionConditions.expiresAt) : undefined
+            expiresAt: body.executionConditions.expiresAt ? new Date(body.executionConditions.expiresAt) : undefined,
+            dependsOn: body.executionConditions.dependsOn
           },
-          description: body.description
+          description: body.metadata?.description || body.description
         }
       );
 
@@ -214,6 +224,29 @@ export class PrivyTransactionController {
       };
     } catch (error) {
       console.error("Error in getUserOrders:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * GET /v1/privy-transactions/orders/:orderId
+   *
+   * Get a specific delegated order by ID
+   */
+  @httpGet("/orders/:orderId")
+  async getOrderById(
+    @request() req: AuthenticatedRequest,
+    @requestParam("orderId") orderId: string
+  ) {
+    try {
+      const order = await this.privyTransactionService.getOrderById(orderId, req.userId);
+
+      return {
+        success: true,
+        order: order
+      };
+    } catch (error) {
+      console.error("Error in getOrderById:", error);
       throw error;
     }
   }

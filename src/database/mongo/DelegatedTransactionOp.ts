@@ -9,6 +9,8 @@ import {
   TransactionType
 } from '../../types/transaction.types';
 import { v4 as uuidv4 } from 'uuid';
+import { EncryptionUtil } from '../../utils/encryption';
+import env from '../../envConfig';
 
 /**
  * Delegated Transaction Operations
@@ -26,6 +28,15 @@ export class DelegatedTransactionOp {
     try {
       const orderId = order.orderId || uuidv4();
 
+      // Encrypt JWT if provided
+      let encryptedJwt: string | undefined;
+      if (order.userJwt) {
+        if (!env.ENCRYPTION_KEY) {
+          throw new Error('ENCRYPTION_KEY is not configured');
+        }
+        encryptedJwt = EncryptionUtil.encrypt(order.userJwt, env.ENCRYPTION_KEY);
+      }
+
       const delegatedTx = new DelegatedTransactionData({
         orderId,
         userId: order.userId,
@@ -35,7 +46,7 @@ export class DelegatedTransactionOp {
         transactionData: order.transactionData,
         executionConditions: order.executionConditions,
         authorization: {
-          userJwtEncrypted: order.userJwt, // TODO: Encrypt before storing
+          userJwtEncrypted: encryptedJwt,
           userAuthorizationSignature: order.userAuthorizationSignature,
           authorizedAt: new Date()
         },
@@ -91,25 +102,33 @@ export class DelegatedTransactionOp {
   async getOrdersReadyForExecution(): Promise<IDelegatedTransaction[]> {
     try {
       const now = new Date();
+      const MAX_RETRY_ATTEMPTS = 3;
 
       return await DelegatedTransactionData.find({
         status: OrderStatus.AUTHORIZED,
-        $or: [
-          // Scheduled orders that are due
+        $and: [
+          // Either scheduled and due, or no schedule (price-based)
           {
-            'executionConditions.executeAt': { $lte: now }
+            $or: [
+              { 'executionConditions.executeAt': { $lte: now } },
+              { 'executionConditions.executeAt': { $exists: false } }
+            ]
           },
-          // Orders without executeAt (price-based, need external check)
+          // Not expired
           {
-            'executionConditions.executeAt': { $exists: false }
+            $or: [
+              { 'executionConditions.expiresAt': { $gt: now } },
+              { 'executionConditions.expiresAt': { $exists: false } }
+            ]
+          },
+          // Not exceeded max retry attempts
+          {
+            'execution.attemptCount': { $lt: MAX_RETRY_ATTEMPTS }
           }
-        ],
-        // Not expired
-        $or: [
-          { 'executionConditions.expiresAt': { $gt: now } },
-          { 'executionConditions.expiresAt': { $exists: false } }
         ]
-      }).lean();
+      })
+      .sort({ createdAt: 1 })
+      .lean();
     } catch (error) {
       console.error('Error fetching orders ready for execution:', error);
       throw new Error('Failed to fetch orders ready for execution');
@@ -210,6 +229,59 @@ export class DelegatedTransactionOp {
     } catch (error) {
       console.error('Error fetching orders by type:', error);
       throw new Error('Failed to fetch orders by type');
+    }
+  }
+
+  /**
+   * Activate orders that depend on this order (linked orders)
+   * Called when parent order executes successfully
+   */
+  async activateDependentOrders(parentOrderId: string): Promise<number> {
+    try {
+      const result = await DelegatedTransactionData.updateMany(
+        {
+          'executionConditions.dependsOn': parentOrderId,
+          status: OrderStatus.AUTHORIZED
+        },
+        {
+          status: OrderStatus.AUTHORIZED,
+          'executionConditions.dependsOn': null // Clear dependency after activation
+        }
+      );
+      return result.modifiedCount;
+    } catch (error) {
+      console.error('Error activating dependent orders:', error);
+      throw new Error('Failed to activate dependent orders');
+    }
+  }
+
+  /**
+   * Update executed amount for an order (for linked orders to track parent execution amount)
+   */
+  async updateExecutedAmount(orderId: string, executedAmount: string): Promise<IDelegatedTransaction | null> {
+    try {
+      return await DelegatedTransactionData.findOneAndUpdate(
+        { orderId },
+        { 'execution.executedAmount': executedAmount },
+        { new: true }
+      ).lean();
+    } catch (error) {
+      console.error('Error updating executed amount:', error);
+      throw new Error('Failed to update executed amount');
+    }
+  }
+
+  /**
+   * Get dependent orders for a parent order
+   */
+  async getDependentOrders(parentOrderId: string): Promise<IDelegatedTransaction[]> {
+    try {
+      return await DelegatedTransactionData.find({
+        'executionConditions.dependsOn': parentOrderId
+      }).lean();
+    } catch (error) {
+      console.error('Error fetching dependent orders:', error);
+      throw new Error('Failed to fetch dependent orders');
     }
   }
 }

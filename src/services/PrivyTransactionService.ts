@@ -12,6 +12,8 @@ import {
   TransactionAuthContext
 } from "../types/transaction.types";
 import { v4 as uuidv4 } from "uuid";
+import { EncryptionUtil } from "../utils/encryption";
+import env from "../envConfig";
 
 /**
  * PrivyTransactionService
@@ -77,6 +79,7 @@ export class PrivyTransactionService {
       value?: string;
       data?: string;
       chainId: number;
+      gas?: string;
     }
   ) {
     try {
@@ -99,6 +102,32 @@ export class PrivyTransactionService {
         ? `0x${BigInt(transactionData.value).toString(16)}`
         : "0x0";
 
+      // Convert gas to hex format if provided
+      const gasInHex = transactionData.gas
+        ? `0x${BigInt(transactionData.gas).toString(16)}`
+        : undefined;
+
+      // Build transaction object
+      const transaction: any = {
+        to: transactionData.to,
+        value: valueInHex,
+        data: transactionData.data || "0x",
+        chain_id: transactionData.chainId
+      };
+
+      // Add gas_limit if provided (Privy SDK expects 'gas_limit', not 'gas')
+      if (gasInHex) {
+        transaction.gas_limit = gasInHex;
+      }
+
+      console.log('[Immediate Transaction] Sending:', JSON.stringify({
+        to: transaction.to,
+        value: transaction.value,
+        data: transaction.data?.slice(0, 20) + '...',
+        chain_id: transaction.chain_id,
+        gas_limit: transaction.gas_limit,
+      }));
+
       // Send transaction using Privy SDK with authorization context
       const result = await this.privyClient
         .wallets()
@@ -106,12 +135,7 @@ export class PrivyTransactionService {
         .sendTransaction(walletId, {
           caip2: `eip155:${transactionData.chainId}`, // CAIP-2 format
           params: {
-            transaction: {
-              to: transactionData.to,
-              value: valueInHex,
-              data: transactionData.data || "0x",
-              chain_id: transactionData.chainId
-            }
+            transaction
           },
           authorization_context: authorizationContext
         });
@@ -158,12 +182,16 @@ export class PrivyTransactionService {
         value?: string;
         data?: string;
         chainId: number;
+        gas?: string;
       };
       executionConditions: {
         targetPrice?: number;
+        priceDirection?: 'above' | 'below';
+        targetTokenSymbol?: string;
         stopPrice?: number;
         executeAt?: Date;
         expiresAt?: Date;
+        dependsOn?: string;
       };
       description?: string;
     }
@@ -197,13 +225,23 @@ export class PrivyTransactionService {
       console.log(
         `[Create Delegated Order] Success: Order ID ${savedOrder.orderId}`
       );
+      console.log(
+        `[Create Delegated Order] SavedOrder keys:`, Object.keys(savedOrder.toObject ? savedOrder.toObject() : savedOrder)
+      );
+      console.log(
+        `[Create Delegated Order] SavedOrder:`, JSON.stringify(savedOrder.toObject ? savedOrder.toObject() : savedOrder, null, 2)
+      );
 
-      return {
+      const response = {
         success: true,
         orderId: savedOrder.orderId,
         status: savedOrder.status,
         message: "Order created and authorized successfully"
       };
+
+      console.log(`[Create Delegated Order] Response:`, JSON.stringify(response, null, 2));
+
+      return response;
     } catch (error) {
       console.error("[Create Delegated Order] Error:", error);
       throw new Error(
@@ -258,11 +296,50 @@ export class PrivyTransactionService {
         OrderStatus.EXECUTING
       );
 
+      // Look up the actual Privy wallet ID from the wallet address
+      // order.walletId contains the address (0x...), but Privy SDK needs the wallet ID
+      let privyWalletId = order.walletId;
+
+      try {
+        const userWallets = await this.authService.getUserWalletsWithSigners(order.userId);
+        console.log('[Execute Delegated Order] User wallets:', JSON.stringify(userWallets, null, 2));
+
+        // Find the wallet with matching address (case-insensitive comparison)
+        const matchingWallet = userWallets.find(
+          (wallet: any) => wallet.address?.toLowerCase() === order.walletId.toLowerCase()
+        );
+
+        if (matchingWallet && matchingWallet.id) {
+          privyWalletId = matchingWallet.id;
+          console.log(`[Execute Delegated Order] Found Privy wallet ID: ${privyWalletId} for address ${order.walletId}`);
+        } else {
+          console.warn(`[Execute Delegated Order] Could not find Privy wallet for address ${order.walletId}, using address as fallback`);
+        }
+      } catch (error) {
+        console.error('[Execute Delegated Order] Error looking up wallet:', error);
+        // Continue with the stored walletId as fallback
+      }
+
+      // Decrypt user JWT if available (for future use with USER_INITIATED mode)
+      let userJwt: string | undefined;
+      if (order.authorization.userJwtEncrypted) {
+        try {
+          userJwt = EncryptionUtil.decrypt(
+            order.authorization.userJwtEncrypted,
+            env.ENCRYPTION_KEY
+          );
+        } catch (error) {
+          console.error('[Execute Delegated Order] Failed to decrypt JWT:', error);
+          // Continue with SERVER_ONLY mode if decryption fails
+        }
+      }
+
       // Build authorization context
       // Using SERVER_ONLY since wallet is configured with 1-of-1 authorization key
       const authContext: TransactionAuthContext = {
         mode: TransactionSigningMode.SERVER_ONLY,
         authorizationPrivateKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY!,
+        userJwt, // Include decrypted JWT if available
         orderId
       };
 
@@ -274,19 +351,33 @@ export class PrivyTransactionService {
         ? `0x${BigInt(order.transactionData.value).toString(16)}`
         : "0x0";
 
+      // Convert gas to hex format if provided
+      const gasInHex = order.transactionData.gas
+        ? `0x${BigInt(order.transactionData.gas).toString(16)}`
+        : undefined;
+
+      // Build transaction object
+      const transaction: any = {
+        to: order.transactionData.to,
+        value: valueInHex,
+        data: order.transactionData.data || "0x",
+        chain_id: order.transactionData.chainId
+      };
+
+      // Add gas_limit if provided (Privy SDK expects 'gas_limit', not 'gas')
+      if (gasInHex) {
+        transaction.gas_limit = gasInHex;
+      }
+
       // Execute transaction using Privy SDK
+      console.log(`[Execute Delegated Order] Sending transaction with wallet ID: ${privyWalletId}`);
       const result = await this.privyClient
         .wallets()
         .ethereum()
-        .sendTransaction(order.walletId, {
+        .sendTransaction(privyWalletId, {
           caip2: `eip155:${order.transactionData.chainId}`, // CAIP-2 format
           params: {
-            transaction: {
-              to: order.transactionData.to,
-              value: valueInHex,
-              data: order.transactionData.data || "0x",
-              chain_id: order.transactionData.chainId
-            }
+            transaction
           },
           authorization_context: authorizationContext
         });
@@ -299,6 +390,17 @@ export class PrivyTransactionService {
           transactionHash: result.hash
         }
       );
+
+      // Activate dependent orders (linked orders like buy->sell)
+      try {
+        const activatedCount = await this.delegatedTransactionOp.activateDependentOrders(orderId);
+        if (activatedCount > 0) {
+          console.log(`[Execute Delegated Order] Activated ${activatedCount} dependent orders`);
+        }
+      } catch (error) {
+        console.error('[Execute Delegated Order] Failed to activate dependent orders:', error);
+        // Don't fail the main execution if dependent order activation fails
+      }
 
       console.log(
         `[Execute Delegated Order] Success: ${result.hash}`
@@ -337,6 +439,28 @@ export class PrivyTransactionService {
       return await this.delegatedTransactionOp.getUserOrders(userId, status);
     } catch (error) {
       console.error("[Get User Orders] Error:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a specific delegated order by ID
+   */
+  async getOrderById(orderId: string, userId: string) {
+    try {
+      const order = await this.delegatedTransactionOp.getOrderById(orderId);
+
+      if (!order) {
+        throw new Error("Order not found");
+      }
+
+      if (order.userId !== userId) {
+        throw new Error("Unauthorized: Order does not belong to user");
+      }
+
+      return order;
+    } catch (error) {
+      console.error("[Get Order By ID] Error:", error);
       throw error;
     }
   }

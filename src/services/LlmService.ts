@@ -441,7 +441,17 @@ export class LlmService implements ILlmService {
             // Try to parse the content JSON
             try {
               const parsed = JSON.parse(toolContent);
-              // Extract executionId if present
+
+              // Debug: Log parsed tool content
+              if (parsed.tool_output) {
+                console.log('[LlmService] Parsed tool content - tool_output present:', JSON.stringify({
+                  hasToolOutput: !!parsed.tool_output,
+                  toolOutputLength: Array.isArray(parsed.tool_output) ? parsed.tool_output.length : 'not array',
+                  firstItemKeys: parsed.tool_output?.[0] ? Object.keys(parsed.tool_output[0]) : [],
+                  transactionType: parsed.tool_output?.[0]?.transactionType,
+                  hasExecutionConditions: !!parsed.tool_output?.[0]?.executionConditions,
+                }, null, 2));
+              }
 
               if (parsed.data_output) {
                 data_output = parsed.data_output;
@@ -472,6 +482,14 @@ export class LlmService implements ILlmService {
               if (!toolOutput.length) {
                 continue;
               }
+
+              // Debug: Log SSE payload before yielding
+              console.log('[SSE Stream] Yielding tool_output:', JSON.stringify(toolOutput.map((item: any) => ({
+                id: item.id,
+                transactionType: item.transactionType,
+                hasExecutionConditions: !!item.executionConditions,
+                executionConditions: item.executionConditions,
+              })), null, 2));
 
               yield {
                 type: "tool",
@@ -618,7 +636,14 @@ export class LlmService implements ILlmService {
 
     const outputArray = Array.isArray(rawOutput) ? rawOutput : [rawOutput];
 
-    return outputArray
+    // Debug: Log input to normalizeToolOutputs
+    console.log('[normalizeToolOutputs] Input:', JSON.stringify(outputArray.map((item: any) => ({
+      hasTransaction: !!item?.transaction,
+      transactionType: item?.transactionType,
+      hasExecutionConditions: !!item?.executionConditions,
+    })), null, 2));
+
+    const result = outputArray
       .map((item, idx) => {
         if (item && typeof item === "object") {
           return {
@@ -631,6 +656,16 @@ export class LlmService implements ILlmService {
       .filter((item): item is Record<string, any> =>
         Boolean(item && typeof item === "object" && item.transaction)
       );
+
+    // Debug: Log output from normalizeToolOutputs
+    console.log('[normalizeToolOutputs] Output:', JSON.stringify(result.map((item: any) => ({
+      id: item.id,
+      transactionType: item.transactionType,
+      hasExecutionConditions: !!item.executionConditions,
+      hasTransaction: !!item.transaction,
+    })), null, 2));
+
+    return result;
   }
 
   private safeJsonParse<T = unknown>(value: string): T | undefined {

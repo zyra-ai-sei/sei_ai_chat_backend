@@ -7,6 +7,7 @@ export * from './transactions';
 export * from './contracts';
 export * from './tokens';
 export * from './twap';
+export * from './swap';
 export { 
   depositSEI, 
   withdrawSEI, 

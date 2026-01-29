@@ -1379,7 +1379,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
           `CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`
         );
       }
-      const completeCoinData = await completeCoinResponse.json();
+      const completeCoinData: any = await completeCoinResponse.json();
 
       // Fetch chart data separately
       const chartUrl = new URL(
@@ -1399,7 +1399,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
           `CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`
         );
       }
-      const chartData = await chartResponse.json();
+      const chartData: any = await chartResponse.json();
 
       // CoinGecko returns { prices: [[timestamp, price], ...], market_caps: [[timestamp, cap], ...] }
       const prices = chartData.prices || [];
@@ -1589,6 +1589,392 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
   }
 );
 
+// ============ UNISWAP V3 SWAP TOOL ============
+
+/**
+ * Fetch USD price of a token from CoinGecko
+ * Maps common token identifiers to CoinGecko IDs
+ */
+async function getTokenUSDPrice(tokenIdentifier: string): Promise<number> {
+  const coingeckoIdMap: Record<string, string> = {
+    // Native tokens
+    "eth": "ethereum",
+    "native": "ethereum",
+    "weth": "ethereum",
+    "matic": "matic-network",
+    "wmatic": "matic-network",
+    // Stablecoins
+    "usdc": "usd-coin",
+    "usdt": "tether",
+    "dai": "dai",
+    // Common tokens
+    "wbtc": "wrapped-bitcoin",
+    "link": "chainlink",
+    "uni": "uniswap",
+    "aave": "aave",
+    "arb": "arbitrum",
+    "op": "optimism",
+    // Common contract addresses (lowercase)
+    "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": "ethereum", // WETH mainnet
+    "0x82af49447d8a07e3bd95bd0d56f35241523fbab1": "ethereum", // WETH arbitrum
+    "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619": "ethereum", // WETH polygon
+    "0x4200000000000000000000000000000000000006": "ethereum", // WETH base/optimism
+    "0xaf88d065e77c8cc2239327c5edb3a432268e5831": "usd-coin", // USDC arbitrum
+    "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": "usd-coin", // USDC mainnet
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": "usd-coin", // USDC polygon
+    "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": "usd-coin", // USDC base
+    "0x0b2c639c533813f4aa9d7837caf62653d097ff85": "usd-coin", // USDC optimism
+  };
+
+  const key = tokenIdentifier.toLowerCase();
+  const coinId = coingeckoIdMap[key];
+
+  if (!coinId) {
+    throw new Error(
+      `Cannot determine USD price for token '${tokenIdentifier}'. ` +
+      `Use amountIn (token amount) instead of amountInUSD for this token.`
+    );
+  }
+
+  const response = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
+    {
+      method: "GET",
+      headers: { "x-cg-demo-api-key": env.COINGECKO_API_KEY },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch price from CoinGecko: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const price = data[coinId]?.usd;
+
+  if (!price || price <= 0) {
+    throw new Error(`Could not get USD price for ${coinId}`);
+  }
+
+  return price;
+}
+
+export const swapTokensTool = langchainTools.tool(
+  async ({
+    tokenIn,
+    tokenOut,
+    amountIn,
+    amountInUSD,
+    slippageTolerance = 0.5,
+    deadline = "20 minutes",
+    recipient,
+    network,
+    useSmartRouting = true,
+    fee = 3000,
+    // Conditional order parameters
+    orderType = "immediate",
+    targetPrice,
+    priceDirection,
+    targetTokenSymbol,
+    expiresAt,
+    executeAt,
+    executeAfterMinutes,
+  }: {
+    tokenIn: string;
+    tokenOut: string;
+    amountIn?: string;
+    amountInUSD?: number;
+    slippageTolerance?: number;
+    deadline?: string;
+    recipient: string;
+    network: string;
+    useSmartRouting?: boolean;
+    fee?: number;
+    // Conditional order parameters
+    orderType?: "immediate" | "limit_order" | "stop_loss" | "scheduled";
+    targetPrice?: number;
+    priceDirection?: "above" | "below";
+    targetTokenSymbol?: string;
+    expiresAt?: string;
+    executeAt?: string;
+    executeAfterMinutes?: number;
+  }) => {
+    try {
+      // Calculate executeAt from executeAfterMinutes if provided (more reliable than LLM-generated timestamps)
+      let resolvedExecuteAt = executeAt;
+      if (executeAfterMinutes !== undefined && executeAfterMinutes > 0) {
+        resolvedExecuteAt = new Date(Date.now() + executeAfterMinutes * 60 * 1000).toISOString();
+        console.log(`[Swap Tool] Calculated executeAt from executeAfterMinutes: ${executeAfterMinutes} mins -> ${resolvedExecuteAt}`);
+      }
+
+      console.log(`[Swap Tool] Called with orderType=${orderType}, targetPrice=${targetPrice}, priceDirection=${priceDirection}, expiresAt=${expiresAt}, executeAt=${resolvedExecuteAt}, executeAfterMinutes=${executeAfterMinutes}`);
+
+      // Validate network - SEI should use place_order tool
+      const supportedNetworks = ["ethereum", "arbitrum", "polygon", "base", "optimism"];
+      if (!supportedNetworks.includes(network.toLowerCase())) {
+        return {
+          text: `Network '${network}' is not supported for Uniswap V3 swaps. ` +
+            `Supported networks: ${supportedNetworks.join(", ")}. ` +
+            `For SEI, please use the place_order tool instead.`,
+          isError: true,
+        };
+      }
+
+      // Resolve amount: convert USD to token amount if amountInUSD is provided
+      let resolvedAmountIn: string;
+      let usdValue: number | undefined;
+
+      if (amountInUSD !== undefined && amountInUSD > 0) {
+        // User specified a dollar amount - convert to token amount
+        const tokenPrice = await getTokenUSDPrice(tokenIn);
+        const tokenAmount = amountInUSD / tokenPrice;
+        resolvedAmountIn = tokenAmount.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
+        usdValue = amountInUSD;
+        console.log(`[Swap] Converting $${amountInUSD} to ${resolvedAmountIn} ${tokenIn} (price: $${tokenPrice})`);
+      } else if (amountIn) {
+        resolvedAmountIn = amountIn;
+      } else {
+        return {
+          text: "Either amountIn (token amount) or amountInUSD (dollar amount) must be provided.",
+          isError: true,
+        };
+      }
+
+      // Parse deadline string to seconds
+      const deadlineSeconds = parseDeadlineToTimestamp(deadline);
+
+      // Build swap transaction
+      const result = await services.buildSwapTransaction({
+        tokenIn,
+        tokenOut,
+        amountIn: resolvedAmountIn,
+        slippageTolerance,
+        deadline: deadlineSeconds,
+        recipient,
+        network: network.toLowerCase(),
+        useSmartRouting,
+        fee,
+      });
+
+      // Determine if this is a conditional order
+      // Price-based: limit_order or stop_loss with targetPrice
+      // Time-based: scheduled with executeAt
+      const isConditional = orderType !== "immediate";
+      console.log(`[Swap Tool] isConditional=${isConditional}, orderType=${orderType}, targetPrice=${targetPrice}, executeAt=${executeAt}`);
+
+      // Build the output with transactionType and executionConditions for frontend
+      const toolOutput: any = {
+        ...result,
+        label: `Swap ${result.metadata.tokenIn.symbol} → ${result.metadata.tokenOut.symbol}`,
+        // Transaction type for frontend to detect
+        transactionType: orderType,
+        // Execution conditions for delegated orders
+        ...(isConditional && {
+          executionConditions: {
+            // Price-based conditions (for limit_order / stop_loss)
+            ...(targetPrice !== undefined && {
+              targetPrice,
+              priceDirection: priceDirection || "below",
+              targetTokenSymbol: targetTokenSymbol || "ethereum",
+            }),
+            // Time-based conditions (for scheduled orders)
+            ...(resolvedExecuteAt && { executeAt: resolvedExecuteAt }),
+            expiresAt: expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // Default 7 days
+          },
+        }),
+      };
+
+      // Embed approval info into the swap transaction (frontend handles inline)
+      if (result.approval) {
+        toolOutput.transaction.approvalNeeded = {
+          address: result.approval.address,
+          abi: result.approval.abi,
+          functionName: result.approval.functionName,
+          args: result.approval.args,
+        };
+      }
+
+      // Build response text based on order type
+      const amountDisplay = usdValue
+        ? `$${usdValue} worth of ${result.metadata.tokenIn.symbol} (${result.metadata.tokenIn.amount} ${result.metadata.tokenIn.symbol})`
+        : `${result.metadata.tokenIn.amount} ${result.metadata.tokenIn.symbol}`;
+      let responseText = `Swap transaction prepared: ${amountDisplay} → ~${result.metadata.tokenOut.expectedAmount} ${result.metadata.tokenOut.symbol} (minimum: ${result.metadata.tokenOut.minimumAmount}). Route: ${result.metadata.route.join(" → ")}. Slippage: ${result.metadata.slippage}.`;
+
+      if (result.approval) {
+        responseText += ` Token approval will be requested automatically before the swap.`;
+      }
+
+      if (isConditional) {
+        if (orderType === "scheduled" && resolvedExecuteAt) {
+          responseText += ` This is a scheduled order that will execute at ${resolvedExecuteAt}.`;
+        } else if (targetPrice !== undefined) {
+          responseText += ` This is a ${orderType.replace("_", " ")} that will execute when ${targetTokenSymbol || "the token"} price goes ${priceDirection || "below"} $${targetPrice}.`;
+        } else {
+          responseText += ` This is a ${orderType.replace("_", " ")} order.`;
+        }
+      }
+
+      // Debug: Log the final tool output being returned
+      console.log('[Swap Tool] Final toolOutput:', JSON.stringify({
+        transactionType: toolOutput.transactionType,
+        hasExecutionConditions: !!toolOutput.executionConditions,
+        executionConditions: toolOutput.executionConditions,
+        transaction: {
+          to: toolOutput.transaction.to,
+          value: toolOutput.transaction.value,
+          gas: toolOutput.transaction.gas,
+          address: toolOutput.transaction.address,
+          functionName: toolOutput.transaction.functionName,
+          hasAbi: !!toolOutput.transaction.abi,
+          hasApprovalNeeded: !!toolOutput.transaction.approvalNeeded,
+        }
+      }, null, 2));
+
+      return {
+        text: responseText,
+        tool_output: [toolOutput],
+      };
+    } catch (error) {
+      return {
+        text: `Error building swap transaction: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        tool_output: null,
+        isError: true,
+      };
+    }
+  },
+  {
+    name: "swap_tokens",
+    description:
+      "Swap tokens using Uniswap V3. Supports Ethereum, Arbitrum, Polygon, Base, and Optimism. " +
+      "For SEI chain, use the place_order tool instead. " +
+      "This tool builds an unsigned swap transaction that the user can sign and execute. " +
+      "Supports both IMMEDIATE swaps (user signs now) and CONDITIONAL orders (limit orders, stop loss) " +
+      "that execute automatically when price conditions are met. " +
+      "For native token swaps (ETH, MATIC), use 'ETH' or 'NATIVE' as the token identifier. " +
+      "IMPORTANT: When the user specifies a DOLLAR amount (e.g., '$1 of ETH', '$50 worth of ETH'), " +
+      "use amountInUSD (e.g., 1 for $1). When the user specifies a TOKEN amount (e.g., '1 ETH', '100 USDC'), " +
+      "use amountIn (e.g., '1' for 1 ETH). " +
+      "When user says 'when price reaches X' or 'when price drops/rises', use orderType='limit_order' with targetPrice. " +
+      "When user says 'after X minutes', 'in 1 hour', use orderType='scheduled' with executeAfterMinutes (number of minutes from now). " +
+      "IMPORTANT: For scheduled orders, ALWAYS use executeAfterMinutes instead of executeAt for accurate timing.",
+    schema: z.object({
+      tokenIn: z
+        .string()
+        .describe(
+          "Input token address, or 'ETH'/'NATIVE' for native token (will be wrapped automatically)"
+        ),
+      tokenOut: z
+        .string()
+        .describe(
+          "Output token address, or 'ETH'/'NATIVE' for native token"
+        ),
+      amountIn: z
+        .string()
+        .optional()
+        .describe(
+          "Amount to swap in TOKEN units (e.g., '1' for 1 ETH, '100' for 100 USDC). " +
+          "Use this when the user specifies a token amount. " +
+          "Either amountIn or amountInUSD must be provided."
+        ),
+      amountInUSD: z
+        .number()
+        .optional()
+        .describe(
+          "Amount to swap in USD (e.g., 1 for $1, 50 for $50). " +
+          "Use this when the user specifies a dollar amount like '$1 of ETH' or '$50 worth of ETH'. " +
+          "The tool will automatically convert to the correct token amount using current market price. " +
+          "Either amountIn or amountInUSD must be provided."
+        ),
+      slippageTolerance: z
+        .number()
+        .optional()
+        .describe("Slippage tolerance in percentage (default: 0.5 for 0.5%)"),
+      deadline: z
+        .string()
+        .optional()
+        .describe(
+          "Transaction deadline as duration (e.g., '20 minutes', '1 hour'). Default: 20 minutes"
+        ),
+      recipient: z
+        .string()
+        .describe("Address that will receive the output tokens (usually the user's address)"),
+      network: z
+        .enum(["ethereum", "arbitrum", "polygon", "base", "optimism"])
+        .describe("Network to execute the swap on"),
+      useSmartRouting: z
+        .boolean()
+        .optional()
+        .describe(
+          "Use Uniswap AlphaRouter for optimal multi-hop routing (default: true). " +
+          "Set to false for direct single-hop swap."
+        ),
+      fee: z
+        .number()
+        .optional()
+        .describe(
+          "Fee tier for single-hop swaps: 100 (0.01%), 500 (0.05%), 3000 (0.3%), 10000 (1%). " +
+          "Default: 3000. Only used when useSmartRouting is false."
+        ),
+      // Conditional order parameters
+      orderType: z
+        .enum(["immediate", "limit_order", "stop_loss", "scheduled"])
+        .optional()
+        .describe(
+          "Type of order: 'immediate' for instant execution (default), " +
+          "'limit_order' for execution when target price is reached, " +
+          "'stop_loss' for execution when price drops below stop price, " +
+          "'scheduled' for time-based execution (e.g., 'after 1 minute', 'at 3pm')"
+        ),
+      targetPrice: z
+        .number()
+        .optional()
+        .describe(
+          "Target price for conditional orders (limit_order/stop_loss). " +
+          "Required when orderType is not 'immediate'. " +
+          "Example: 3000 means execute when price reaches $3000"
+        ),
+      priceDirection: z
+        .enum(["above", "below"])
+        .optional()
+        .describe(
+          "Price direction for limit orders: 'above' to execute when price rises above target, " +
+          "'below' to execute when price drops below target. Default: 'below'"
+        ),
+      targetTokenSymbol: z
+        .string()
+        .optional()
+        .describe(
+          "Token symbol to monitor for price conditions (e.g., 'ethereum', 'bitcoin'). " +
+          "This is the CoinGecko ID. Default: 'ethereum'"
+        ),
+      expiresAt: z
+        .string()
+        .optional()
+        .describe(
+          "Expiration date for conditional orders in ISO format (e.g., '2024-12-31T00:00:00Z'). " +
+          "Default: 7 days from now"
+        ),
+      executeAt: z
+        .string()
+        .optional()
+        .describe(
+          "Execution time for scheduled orders in ISO format (e.g., '2025-01-28T15:30:00Z'). " +
+          "DEPRECATED: Prefer using executeAfterMinutes instead for more accurate timing."
+        ),
+      executeAfterMinutes: z
+        .number()
+        .optional()
+        .describe(
+          "Number of minutes from NOW to execute the scheduled order. " +
+          "Use this instead of executeAt for scheduled orders. " +
+          "Examples: 1 for 'after 1 minute', 5 for 'in 5 minutes', 60 for 'in 1 hour'. " +
+          "The server will calculate the exact execution time based on the current time when the order is created."
+        ),
+    }),
+  }
+);
+
 const toolsList = [
   // Network Tools
   getChainInfoTool,
@@ -1637,6 +2023,7 @@ const toolsList = [
 
   // Trading/Swap Tools
   createOrderTool,
+  swapTokensTool,
 
   // Utility Tools
   convertTokenSymbolToAddressTool,

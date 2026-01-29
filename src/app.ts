@@ -89,6 +89,11 @@ class ArrowServer {
       // Start cron jobs
       const cronService = container.get<any>(TYPES.CronService);
       // cronService.startCronJobs();
+
+      // Start offline transaction monitoring service
+      const monitoringService = container.get<any>(TYPES.OfflineTransactionMonitorService);
+      monitoringService.startMonitoring();
+      console.log('✅ Offline transaction monitoring service started');
     } catch (error) {
       console.error("Failed to start cron jobs:", error);
     }
@@ -106,14 +111,25 @@ arrowServer.app.emit("new2chat", "hi there");
 
 // Graceful shutdown handler
 const gracefulShutdown = async (signal: string) => {
+  console.log(`${signal} received, shutting down gracefully...`);
 
   try {
     // Import TYPES to get the correct symbol
     const { TYPES } = await import("./ioc-container/types");
+
+    // Stop offline transaction monitoring service
+    const monitoringService = container.get<any>(TYPES.OfflineTransactionMonitorService);
+    if (monitoringService && typeof monitoringService.stopMonitoring === "function") {
+      monitoringService.stopMonitoring();
+      console.log("Monitoring service stopped");
+    }
+
+    // Dispose LLM service
     const llmService = container.get<any>(TYPES.LlmService);
     if (llmService && typeof llmService.dispose === "function") {
       await llmService.dispose();
     }
+
     await mongoose.connection.close();
     console.log("Database connections closed");
     process.exit(0);

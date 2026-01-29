@@ -9,6 +9,7 @@ const env = cleanEnv(process.env, {
   REDIS_HOST: str(),
   AUTH_MESSAGE_TIMEOUT: num({ default: 60 * 1000 }),
   SECRET_KEY: str({ default: "IAMSHREYANSH" }),
+  ENCRYPTION_KEY: str(),
   GEMINI_API_KEY: str(),
   LLAMA_API_KEY: str(),
   MONGO_URI: str(),

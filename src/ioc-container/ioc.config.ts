@@ -32,6 +32,8 @@ import { PrivyTransactionController } from "../controller/PrivyTransactionContro
 import { PrivyTransactionService } from "../services/PrivyTransactionService";
 import { PrivyTestController } from "../controller/PrivyTestController";
 import { DelegatedTransactionOp } from "../database/mongo/DelegatedTransactionOp";
+import { PriceCheckerService } from "../services/PriceCheckerService";
+import { OfflineTransactionMonitorService } from "../services/OfflineTransactionMonitorService";
 
 const container = new Container();
 
@@ -80,6 +82,14 @@ container.bind<OrderService>(TYPES.OrderService).to(OrderService);
 container
   .bind<PrivyTransactionService>(TYPES.PrivyTransactionService)
   .to(PrivyTransactionService)
+  .inSingletonScope();
+container
+  .bind<PriceCheckerService>(TYPES.PriceCheckerService)
+  .to(PriceCheckerService)
+  .inSingletonScope();
+container
+  .bind<OfflineTransactionMonitorService>(TYPES.OfflineTransactionMonitorService)
+  .to(OfflineTransactionMonitorService)
   .inSingletonScope();
 
 container.bind<Hello>(TYPES.Hello).to(Hello);
