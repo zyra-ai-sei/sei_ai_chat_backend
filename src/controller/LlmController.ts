@@ -24,14 +24,8 @@ export class LlmController {
   ): Promise<string | object> {
     const { prompt, messageType } = req.body;
     const network = req.network;
-    const address = req.query.address;
+    const address = req.query.address as string;
     const userId = req.userId;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
     const type =
       messageType === "human" || messageType === "system"
         ? messageType
@@ -48,13 +42,8 @@ export class LlmController {
     const prompt = Array.isArray(promptParam)
       ? promptParam.join(" ")
       : promptParam;
-    const address = ethers.getAddress(req.query.address as string);
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+    
     const messageTypeParam = req.query.messageType;
     const messageType =
       typeof messageTypeParam === "string" &&
@@ -125,13 +114,8 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest & NetworkRequest
   ): Promise<string | object> {
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+    
     const network = req.network;
     const userId = req.userId;
     return this.llmService.getChatHistory(userId, address, network);
@@ -142,13 +126,8 @@ export class LlmController {
     @request()
     req: AuthenticatedRequest & NetworkRequest
   ): Promise<{ success: boolean; message?: string }> {
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+   
     const userId = req.userId;
     const network = req.network;
     const { executionId, executionState, txnHash } = req.body;
@@ -191,13 +170,8 @@ export class LlmController {
     req: AuthenticatedRequest
   ): Promise<{ success: boolean }> {
     const userId = req.userId;
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+   
     await this.llmService.clearChat(userId, address);
     return { success: true };
   }

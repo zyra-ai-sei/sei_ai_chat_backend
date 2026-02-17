@@ -13,13 +13,8 @@ export class PortfolioController {
 
   @httpGet("/totalBalance/")
   async getTotalBalance(@request() req: AuthenticatedRequest) {
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+    
     return this.portfolioService.getTotalBalance(address as Address);
   }
 
@@ -38,13 +33,8 @@ export class PortfolioController {
 
   @httpGet("/summary")
   async getSummary(@request() req: AuthenticatedRequest) {
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
+    const address = req.query.address as string;
+    
     return this.portfolioService.getWalletSummary(address as Address);
   }
 }
