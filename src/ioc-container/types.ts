@@ -37,6 +37,7 @@ export const TYPES = {
     // middleware
     AuthMiddleware: Symbol.for('AuthMiddleware'),
     NetworkMiddleware: Symbol.for('NetworkMiddleware'),
+    AddressMiddleware: Symbol.for('AddressMiddleware'),
 
     
     // constants

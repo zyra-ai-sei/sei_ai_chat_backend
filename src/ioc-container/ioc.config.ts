@@ -8,6 +8,7 @@ import { AuthController } from "../controller/AuthController";
 import { AuthService } from "../services/AuthService";
 import AuthMiddleware from "../middleware/AuthMiddleware";
 import NetworkMiddleware from "../middleware/NetworkMiddleware";
+import { AddressMiddleware } from "../middleware/AddressMiddleware";
 import { LlmController } from "../controller/LlmController";
 import { LlmService } from "../services/LlmService";
 import { ILlmService } from "../services/interfaces/ILlmService";
@@ -86,7 +87,10 @@ container.bind<UserOp>(TYPES.UserOp).to(UserOp);
 container.bind<OrderOp>(TYPES.OrderOp).to(OrderOp);
 
 container.bind<AuthMiddleware>(TYPES.AuthMiddleware).to(AuthMiddleware);
-container.bind<NetworkMiddleware>(TYPES.NetworkMiddleware).to(NetworkMiddleware);
+container
+  .bind<NetworkMiddleware>(TYPES.NetworkMiddleware)
+  .to(NetworkMiddleware);
+container.bind<AddressMiddleware>(TYPES.AddressMiddleware).to(AddressMiddleware);
 
 container
   .bind<ethers.JsonRpcProvider>(TYPES.Web3Provider)

@@ -5,7 +5,7 @@ import { PortfolioService } from "../services/PortfolioService";
 import { AuthenticatedRequest } from "../types/requestTypes";
 import { Address } from "viem";
 
-@controller("/portfolio", TYPES.AuthMiddleware)
+@controller("/portfolio", TYPES.AuthMiddleware, TYPES.AddressMiddleware)
 export class PortfolioController {
   constructor(
     @inject(TYPES.PortfolioService) private portfolioService: PortfolioService

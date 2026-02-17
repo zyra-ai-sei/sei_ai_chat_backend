@@ -13,7 +13,7 @@ import AuthMiddleware from "../middleware/AuthMiddleware";
 import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
 import { ethers } from "ethers";
 
-@controller("/llm", TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
+@controller("/llm", TYPES.AuthMiddleware, TYPES.NetworkMiddleware, TYPES.AddressMiddleware)
 export class LlmController {
   constructor(@inject(TYPES.LlmService) private llmService: ILlmService) {}
 

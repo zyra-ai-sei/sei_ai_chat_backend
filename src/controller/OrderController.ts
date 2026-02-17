@@ -4,7 +4,7 @@ import { inject } from "inversify";
 import { OrderService } from "../services/OrderService";
 import { AuthenticatedRequest } from "../types/requestTypes";
 
-@controller("/orders", TYPES.AuthMiddleware)
+@controller("/orders", TYPES.AuthMiddleware, TYPES.AddressMiddleware)
 export class OrderController {
   constructor(@inject(TYPES.OrderService) private orderService: OrderService) {}
 
