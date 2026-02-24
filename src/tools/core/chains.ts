@@ -1,11 +1,38 @@
 import type { Chain } from 'viem';
-import { sei, seiDevnet, seiTestnet, mainnet, polygon, arbitrum, optimism } from 'viem/chains';
+import { http, webSocket, fallback } from 'viem';
+import { sei, seiDevnet, seiTestnet, mainnet, polygon, arbitrum, optimism, base } from 'viem/chains';
 import env from '../../envConfig';
 
 // Default configuration values
 export const DEFAULT_NETWORK = 'sei';
 export const DEFAULT_RPC_URL = `https://sei-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`;
 export const DEFAULT_CHAIN_ID = 1329;
+
+/**
+ * RPC configuration using viem fallback mechanism
+ */
+export const RPC_TRANSPORTS: any = {
+	[sei.id]: fallback([
+		http(`https://sei-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+		// webSocket(`wss://sei-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+	]),
+	[mainnet.id]: fallback([
+		http(`https://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+		webSocket(`wss://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+	]),
+	[polygon.id]: fallback([
+		http(`https://polygon-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+		webSocket(`wss://polygon-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+	]),
+	[arbitrum.id]: fallback([
+		http(`https://arb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+		webSocket(`wss://arb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+	]),
+	[base.id]: fallback([
+		http(`https://base-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+		webSocket(`wss://base-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+	]),
+};
 
 // Map chain IDs to chains
 export const chainMap: Record<number, Chain> = {
@@ -21,6 +48,8 @@ export const chainMap: Record<number, Chain> = {
 	42161: arbitrum,
 	// Optimism
 	10: optimism,
+	// Base
+	8453: base,
 };
 
 // Map network names to chain IDs for easier reference

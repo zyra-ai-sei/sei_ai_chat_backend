@@ -39,27 +39,47 @@ export class TokenTrackingController {
 
   @httpPost("/subscribe")
   private async subscribe(@request() req: AuthenticatedRequest) {
-    const { address } = req.body;
+    const { address, chains } = req.body;
     const userId = req.userId; // Assuming AuthMiddleware populates this
 
     if (!userId) {
       throw new Error("User not authenticated");
     }
 
-    await this.trackingService.subscribe(userId, address);
-    return { success: true, message: `Subscribed to ${address}` };
+    // Default to ["sei"] if no chains provided, supporting either array or single string for migration
+    const chainList = Array.isArray(chains) ? chains : (chains ? [chains] : ["sei"]);
+
+    await this.trackingService.subscribe(userId, address, chainList);
+    return { success: true, message: `Subscribed to ${address} on ${chainList.join(", ")}` };
   }
 
-  @httpPost("/unsubscribe")
-  private async unsubscribe(@request() req: AuthenticatedRequest) {
-    const { address } = req.body;
+  @httpPost("/update")
+  private async updateSubscription(@request() req: AuthenticatedRequest) {
+    const { address, chains } = req.body;
     const userId = req.userId;
 
     if (!userId) {
       throw new Error("User not authenticated");
     }
 
-    await this.trackingService.unsubscribe(userId, address);
+    if (!Array.isArray(chains)) {
+      throw new Error("Chains must be an array");
+    }
+
+    await this.trackingService.updateSubscription(userId, address, chains);
+    return { success: true, message: `Updated subscription for ${address} to ${chains.join(", ")}` };
+  }
+
+  @httpPost("/unsubscribe")
+  private async unsubscribe(@request() req: AuthenticatedRequest) {
+    const { address, chain } = req.body;
+    const userId = req.userId;
+
+    if (!userId) {
+      throw new Error("User not authenticated");
+    }
+
+    await this.trackingService.unsubscribe(userId, address, chain);
     return { success: true, message: `Unsubscribed from ${address}` };
   }
 }

@@ -8,6 +8,7 @@ import mongoose from "mongoose";
 import http from "http";
 import { responseFormatter } from "./middleware/ResponseFormatter";
 import { Server as SocketServer } from "socket.io";
+import { initToolHelperStreamRegistry } from "./tools/types";
 
 class ArrowServer {
   private readonly port: string | number;
@@ -99,6 +100,10 @@ class ArrowServer {
   private startCronJobs(): void {
     try {
       const { TYPES } = require("./ioc-container/types");
+
+      // Initialize StreamRegistry for tool helper SSE notifications
+      const streamRegistry = container.get<any>(TYPES.StreamRegistry);
+      initToolHelperStreamRegistry(streamRegistry);
 
       // Start blockchain event listener
       const twapEventService = container.get<any>(TYPES.TwapEventService);

@@ -3,6 +3,7 @@ import { TYPES } from "../ioc-container/types";
 import { inject } from "inversify";
 import { OrderService } from "../services/OrderService";
 import { AuthenticatedRequest } from "../types/requestTypes";
+import { getSafeAddress } from "../utils";
 
 @controller("/orders", TYPES.AuthMiddleware, TYPES.AddressMiddleware)
 export class OrderController {
@@ -11,7 +12,7 @@ export class OrderController {
   @httpGet("/")
   async getOrders(@request() req: AuthenticatedRequest) {
     const { page, limit } = req.query;
-  const address = req.query.address as string;
+    const address = req.query.address as string;
 
     return await this.orderService.getUserOrders(
       address,

@@ -136,9 +136,8 @@ export async function buildask(
     ],
     client: publicClient,
   });
-  const srcDecimals = await srcTokenContract.read.decimals();
 
-  const destTokenContract = getContract({
+   const destTokenContract = getContract({
     address: destTokenAddress as Address,
     abi: [
       {
@@ -151,7 +150,14 @@ export async function buildask(
     ],
     client: publicClient,
   });
-  const destDecimals = await destTokenContract.read.decimals();
+
+   // Get token symbols for metadata
+  const [srcSymbol, destSymbol, srcDecimals, destDecimals] = await Promise.all([
+    srcTokenContract.read.symbol().catch(() => "Unknown"),
+    destTokenContract.read.symbol().catch(() => "Unknown"),
+    srcTokenContract.read.decimals().catch(()=>"Unknown"),
+    destTokenContract.read.decimals().catch(()=>"Unknown"),
+  ]);
 
   let isMarketOrder;
   let fillDelayValue;
@@ -212,11 +218,7 @@ export async function buildask(
     deadline:deadlineMS,
   });
 
-  // Get token symbols for metadata
-  const [srcSymbol, destSymbol] = await Promise.all([
-    srcTokenContract.read.symbol().catch(() => "Unknown"),
-    destTokenContract.read.symbol().catch(() => "Unknown")
-  ]);
+ 
 
   const txRequest = {
     address: config.twapAddress,

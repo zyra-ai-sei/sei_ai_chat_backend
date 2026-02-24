@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { http, type Address, type Hex, type PublicClient, type WalletClient, createPublicClient, createWalletClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { DEFAULT_NETWORK, getChain, getRpcUrl } from '../chains';
+import { DEFAULT_NETWORK, getChain, getRpcUrl, RPC_TRANSPORTS } from '../chains';
 import { getWalletProvider } from '../wallets/index';
 
 // Cache for clients to avoid recreating them for each request
@@ -27,9 +27,12 @@ export function getPublicClient(network = DEFAULT_NETWORK): PublicClient {
 	const chain = getChain(network);
 	const rpcUrl = getRpcUrl(network);
 
+	// Use robust transport if available for this chain, otherwise fallback to simple http
+	const transport = RPC_TRANSPORTS[chain.id] || http(rpcUrl);
+
 	const client = createPublicClient({
 		chain,
-		transport: http(rpcUrl)
+		transport
 	});
 
 	// Cache the client

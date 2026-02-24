@@ -5,7 +5,12 @@ import { TransactionService } from "../services/TransactionService";
 import { type Request } from "express";
 import { AuthenticatedRequest, NetworkRequest } from "../types/requestTypes";
 
-@controller("/transactions", TYPES.AuthMiddleware, TYPES.NetworkMiddleware)
+@controller(
+  "/transactions",
+  TYPES.AuthMiddleware,
+  TYPES.NetworkMiddleware,
+  TYPES.AddressMiddleware
+)
 export class TransactionController {
   constructor(
     @inject(TYPES.TransactionService)
@@ -18,13 +23,6 @@ export class TransactionController {
   ) {
     const { txHash } = req.query;
     const userId = req.userId;
-    const address = req.query.address;
-    if (
-      !(address == req.embeddedAddress) &&
-      !(address == req.injectedAddress)
-    ) {
-      throw new Error(`User request not authorized`);
-    }
     const network = req.network;
     return await this.transactionService.addTransaction(
       userId,

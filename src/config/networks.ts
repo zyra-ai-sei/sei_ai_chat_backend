@@ -28,6 +28,34 @@ export interface TokenInfo {
 }
 
 import env from "../envConfig";
+import { http, webSocket, fallback } from "viem";
+import { sei, mainnet, polygon, arbitrum, base } from "viem/chains";
+
+/**
+ * RPC configuration using viem fallback mechanism
+ */
+export const RPC_CONFIG: any = {
+  [sei.id]: fallback([
+    http(`https://sei-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+    // webSocket(`wss://sei-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+  ]),
+  [polygon.id]: fallback([
+    http(`https://polygon-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+    webSocket(`wss://polygon-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+  ]),
+  [base.id]: fallback([
+    http(`https://base-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+    webSocket(`wss://base-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+  ]),
+  [arbitrum.id]: fallback([
+    http(`https://arb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+    webSocket(`wss://arb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+  ]),
+  [mainnet.id]: fallback([
+    http(`https://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+    webSocket(`wss://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}`),
+  ]),
+};
 
 /**
  * Supported Networks Configuration

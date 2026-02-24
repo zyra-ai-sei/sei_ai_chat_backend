@@ -32,6 +32,7 @@ import { OrderController } from "../controller/OrderController";
 import { TokenTrackingController } from "../controller/TokenTrackingController";
 import { TokenTrackingService } from "../services/TokenTrackingService";
 import { SocketService } from "../services/SocketService";
+import { StreamRegistry } from "../services/StreamRegistry";
 import { AddressActivitySummaryController } from "../controller/AddressActivitySummaryController";
 import { AddressActivitySummaryService } from "../services/AddressActivitySummaryService";
 
@@ -50,11 +51,17 @@ container
   .bind<PortfolioController>(TYPES.PortfolioController)
   .to(PortfolioController);
 container.bind<OrderController>(TYPES.OrderController).to(OrderController);
-container.bind<TokenTrackingController>(TYPES.TokenTrackingController).to(TokenTrackingController);
-container.bind<AddressActivitySummaryController>(TYPES.AddressActivitySummaryController).to(AddressActivitySummaryController);
+container
+  .bind<TokenTrackingController>(TYPES.TokenTrackingController)
+  .to(TokenTrackingController);
+container
+  .bind<AddressActivitySummaryController>(
+    TYPES.AddressActivitySummaryController,
+  )
+  .to(AddressActivitySummaryController);
 
 container.bind<AuthService>(TYPES.AuthService).to(AuthService);
-container.bind<ILlmService>(TYPES.LlmService).to(LlmService).inSingletonScope();
+container.bind<LlmService>(TYPES.LlmService).to(LlmService).inSingletonScope();
 container
   .bind<RedisService>(TYPES.RedisService)
   .to(RedisService)
@@ -78,9 +85,22 @@ container
   .to(CronService)
   .inSingletonScope();
 container.bind<OrderService>(TYPES.OrderService).to(OrderService);
-container.bind<TokenTrackingService>(TYPES.TokenTrackingService).to(TokenTrackingService).inSingletonScope();
-container.bind<SocketService>(TYPES.SocketService).to(SocketService).inSingletonScope();
-container.bind<AddressActivitySummaryService>(TYPES.AddressActivitySummaryService).to(AddressActivitySummaryService).inSingletonScope();
+container
+  .bind<TokenTrackingService>(TYPES.TokenTrackingService)
+  .to(TokenTrackingService)
+  .inSingletonScope();
+container
+  .bind<SocketService>(TYPES.SocketService)
+  .to(SocketService)
+  .inSingletonScope();
+container
+  .bind<StreamRegistry>(TYPES.StreamRegistry)
+  .to(StreamRegistry)
+  .inSingletonScope();
+container
+  .bind<AddressActivitySummaryService>(TYPES.AddressActivitySummaryService)
+  .to(AddressActivitySummaryService)
+  .inSingletonScope();
 
 container.bind<Hello>(TYPES.Hello).to(Hello);
 container.bind<UserOp>(TYPES.UserOp).to(UserOp);

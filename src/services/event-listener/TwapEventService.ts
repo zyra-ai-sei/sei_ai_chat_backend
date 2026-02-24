@@ -5,6 +5,7 @@ import { TYPES } from "../../ioc-container/types";
 import { TWAP_CONFIGS } from "../../config/twap";
 import { SUPPORTED_NETWORKS } from "../../config/networks";
 import { UserOp } from "../../database/mongo/UserOp";
+import { StreamRegistry, SSEEvent } from "../StreamRegistry";
 
 // Simple ABI for the events we care about
 const TWAP_ABI = [
@@ -26,8 +27,41 @@ interface ChainContracts {
 export class TwapEventService {
   private chainContracts: Map<string, ChainContracts> = new Map();
 
-  constructor(@inject(TYPES.UserOp) private userOp: UserOp) {
+  constructor(
+    @inject(TYPES.UserOp) private userOp: UserOp,
+    @inject(TYPES.StreamRegistry) private streamRegistry: StreamRegistry
+  ) {
     this.initializeChainContracts();
+  }
+
+  /**
+   * Emit a tx_update SSE event to all streams associated with an address
+   */
+  private emitTxUpdate(
+    address: string,
+    updateType: 'order_created' | 'order_filled' | 'order_completed' | 'order_canceled',
+    orderId: number,
+    chainId: number,
+    txHash: string,
+    additionalData: any = {}
+  ): void {
+    const event: SSEEvent = {
+      type: 'tx_update',
+      data: {
+        updateType,
+        orderId: orderId.toString(),
+        txHash,
+        address,
+        chainId,
+        data: additionalData,
+      },
+      timestamp: Date.now(),
+    };
+
+    const sentCount = this.streamRegistry.sendToAddress(address, event);
+    if (sentCount > 0) {
+      console.log(`[TwapEventService] Emitted ${updateType} to ${sentCount} stream(s) for address ${address}`);
+    }
   }
 
   private initializeChainContracts() {
@@ -118,7 +152,7 @@ export class TwapEventService {
             return;
           }
 
-          await Order.create({
+          const orderData = {
             orderId: Number(id),
             chainId: networkConfig.chainId,
             chainName: chainKey,
@@ -138,8 +172,25 @@ export class TwapEventService {
             totalFilledAmount: "0",
             fills: [],
             txHashCreated: event.log.transactionHash,
-          });
+          };
+
+          await Order.create(orderData);
           console.log(`[${chainKey}] [NEW] Order #${id} created for user ${maker}`);
+
+          // Emit tx_update to connected streams
+          this.emitTxUpdate(
+            maker,
+            'order_created',
+            Number(id),
+            networkConfig.chainId,
+            event.log.transactionHash,
+            {
+              srcToken: ask.srcToken,
+              dstToken: ask.dstToken,
+              srcAmount: ask.srcAmount.toString(),
+              status: 'OPEN',
+            }
+          );
         } catch (err) {
           console.error(`[${chainKey}] Error saving new order:`, err);
         }
@@ -201,6 +252,22 @@ export class TwapEventService {
             await result.updateOne({ percentFilled: percent });
 
             console.log(`[${chainKey}] [FILL] Order #${id}: ${percent}% filled`);
+
+            // Emit tx_update to connected streams
+            this.emitTxUpdate(
+              maker,
+              'order_filled',
+              orderId,
+              networkConfig.chainId,
+              txHash,
+              {
+                percentFilled: percent,
+                srcAmountIn: srcIn.toString(),
+                dstAmountOut: dstOut.toString(),
+                totalFilledAmount: srcFilledAmount.toString(),
+                taker: taker,
+              }
+            );
           } else {
             console.log(`[${chainKey}] [SKIP] Duplicate or missing order #${id}`);
           }
@@ -220,6 +287,20 @@ export class TwapEventService {
             { status: "COMPLETED", percentFilled: 100, lastUpdated: new Date() }
           );
           console.log(`[${chainKey}] [DONE] Order #${id} completed`);
+
+          // Emit tx_update to connected streams
+          this.emitTxUpdate(
+            maker,
+            'order_completed',
+            Number(id),
+            networkConfig.chainId,
+            event.log.transactionHash,
+            {
+              status: 'COMPLETED',
+              percentFilled: 100,
+              taker: taker,
+            }
+          );
         } catch (err) {
           console.error(`[${chainKey}] Error marking order completed:`, err);
         }
@@ -234,6 +315,19 @@ export class TwapEventService {
           { status: "CANCELED", lastUpdated: new Date() }
         );
         console.log(`[${chainKey}] [CANCEL] Order #${id} canceled`);
+
+        // Emit tx_update to connected streams
+        this.emitTxUpdate(
+          maker,
+          'order_canceled',
+          Number(id),
+          networkConfig.chainId,
+          event.log.transactionHash,
+          {
+            status: 'CANCELED',
+            canceledBy: sender,
+          }
+        );
       } catch (err) {
         console.error(`[${chainKey}] Error marking order canceled:`, err);
       }

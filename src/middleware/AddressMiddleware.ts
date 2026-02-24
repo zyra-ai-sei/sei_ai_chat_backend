@@ -2,7 +2,7 @@ import { injectable } from "inversify";
 import { BaseMiddleware } from "inversify-express-utils";
 import { NextFunction, Response } from "express";
 import { AuthenticatedRequest } from "../types/requestTypes";
-import { getSafeAddress } from "../utils/address";
+import { getSafeAddress } from "../utils";
 
 @injectable()
 export class AddressMiddleware extends BaseMiddleware {

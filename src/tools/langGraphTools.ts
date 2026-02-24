@@ -15,6 +15,18 @@ import env from "../envConfig";
 import { getTrackedTransfers } from "./database/services";
 import { getLatestTwitterTweets, getTopTwitterTweets } from "./twitter/services";
 import { StructuredTool } from "langchain";
+import { LatestTwitterTweetsTool, TopTwitterTweetsTool } from "./twitter/tools";
+import container from "../ioc-container/ioc.config";
+import { TYPES } from "../ioc-container/types";
+import { TokenTrackingService } from "../services/TokenTrackingService";
+import { stargateTools } from "./blockchain/bridges/stargate/tools";
+import {
+  createQueryResponse,
+  createTransactionResponse,
+  createAsyncResponse,
+  createErrorResponse,
+  extractConfig,
+} from "./types";
 
 // Interface for LangChain tool function
 interface LangChainTool {
@@ -37,16 +49,17 @@ export const getTransactionTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: services.helpers.formatJson(transaction),
-      };
+      return createQueryResponse({
+        toolName: 'get_transaction',
+        text: `Transaction details for ${txHash} on ${network}`,
+        data: transaction,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching transaction ${txHash}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_transaction',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -71,25 +84,18 @@ export const getChainInfoTool = langchainTools.tool(
       const blockNumber = await services.getBlockNumber(network);
       const rpcUrl = getRpcUrl(network);
 
-      return {
-        text: JSON.stringify(
-          {
-            network,
-            chainId,
-            blockNumber: blockNumber.toString(),
-            rpcUrl,
-          },
-          null,
-          2
-        ),
-      };
+      const data = { network, chainId, blockNumber: blockNumber.toString(), rpcUrl };
+      return createQueryResponse({
+        toolName: 'get_chain_info',
+        text: `Chain info for ${network}: chainId=${chainId}, block=${blockNumber}`,
+        data,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching chain info: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_chain_info',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -111,22 +117,17 @@ export const getSupportedNetworksTool = langchainTools.tool(
     try {
       const networks = getSupportedNetworks();
 
-      return {
-        text: JSON.stringify(
-          {
-            supportedNetworks: networks,
-          },
-          null,
-          2
-        ),
-      };
+      return createQueryResponse({
+        toolName: 'get_supported_networks',
+        text: `Supported networks: ${networks.map((n: any) => n.name || n).join(', ')}`,
+        data: { supportedNetworks: networks },
+      });
     } catch (error) {
-      return {
-        text: `Error fetching supported networks: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_supported_networks',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -149,28 +150,26 @@ export const getBlockByNumberTool = langchainTools.tool(
     try {
       const block = await services.getBlockByNumber(blockNumber, network);
 
-      return {
-        text: JSON.stringify(
-          {
-            network,
-            block: {
-              number: block.number?.toString(),
-              hash: block.hash,
-              timestamp: block.timestamp?.toString(),
-              transactionCount: block.transactions?.length || 0,
-            },
-          },
-          null,
-          2
-        ),
+      const data = {
+        network,
+        block: {
+          number: block.number?.toString(),
+          hash: block.hash,
+          timestamp: block.timestamp?.toString(),
+          transactionCount: block.transactions?.length || 0,
+        },
       };
+      return createQueryResponse({
+        toolName: 'get_block_by_number',
+        text: `Block #${blockNumber} on ${network}: hash=${block.hash}, txCount=${block.transactions?.length || 0}`,
+        data,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching block ${blockNumber}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_block_by_number',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -191,23 +190,17 @@ export const getLatestBlockTool = langchainTools.tool(
     try {
       const blockNumber = await services.getBlockNumber(network);
 
-      return {
-        text: JSON.stringify(
-          {
-            network,
-            latestBlockNumber: blockNumber.toString(),
-          },
-          null,
-          2
-        ),
-      };
+      return createQueryResponse({
+        toolName: 'get_latest_block',
+        text: `Latest block on ${network}: ${blockNumber.toString()}`,
+        data: { network, latestBlockNumber: blockNumber.toString() },
+      });
     } catch (error) {
-      return {
-        text: `Error fetching latest block: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_latest_block',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -234,27 +227,18 @@ export const getBalanceTool = langchainTools.tool(
   }) => {
     try {
       const balance = await services.getBalance(address, network);
-      return {
-        text: JSON.stringify(
-          {
-            address,
-            network,
-            balance: {
-              wei: balance.wei.toString(),
-              ether: balance.sei,
-            },
-          },
-          null,
-          2
-        ),
-      };
+      const data = { address, network, balance: { wei: balance.wei.toString(), ether: balance.sei } };
+      return createQueryResponse({
+        toolName: 'get_balance',
+        text: `Balance for ${address} on ${network}: ${balance.sei} SEI`,
+        data,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching balance for ${address}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_balance',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -285,29 +269,21 @@ export const getErc20BalanceTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(
-          {
-            address,
-            tokenAddress,
-            network,
-            balance: {
-              raw: balance.raw.toString(),
-              formatted: balance.formatted,
-              decimals: balance.token.decimals,
-            },
-          },
-          null,
-          2
-        ),
+      const data = {
+        address, tokenAddress, network,
+        balance: { raw: balance.raw.toString(), formatted: balance.formatted, decimals: balance.token.decimals },
       };
+      return createQueryResponse({
+        toolName: 'get_erc20_balance',
+        text: `ERC20 balance for ${address}: ${balance.formatted} (${balance.token.decimals} decimals)`,
+        data,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching ERC20 balance for ${address}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_erc20_balance',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -341,28 +317,22 @@ export const getTokenBalanceTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(
-          {
-            tokenAddress,
-            owner: ownerAddress,
-            network,
-            raw: balance.raw.toString(),
-            formatted: balance.formatted,
-            symbol: balance.token.symbol,
-            decimals: balance.token.decimals,
-          },
-          null,
-          2
-        ),
+      const data = {
+        tokenAddress, owner: ownerAddress, network,
+        raw: balance.raw.toString(), formatted: balance.formatted,
+        symbol: balance.token.symbol, decimals: balance.token.decimals,
       };
+      return createQueryResponse({
+        toolName: 'get_token_balance',
+        text: `Token balance for ${ownerAddress}: ${balance.formatted} ${balance.token.symbol}`,
+        data,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching token balance: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_token_balance',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -406,16 +376,17 @@ export const getTransactionReceiptTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(receipt, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_transaction_receipt',
+        text: `Transaction receipt for ${txHash} on ${network}`,
+        data: receipt,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching transaction receipt ${txHash}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_transaction_receipt',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -434,7 +405,7 @@ export const getTransactionReceiptTool = langchainTools.tool(
 // TRANSFER TOOLS
 
 export const transferSeiTool = langchainTools.tool(
-  async ({
+  ({
     to,
     amount,
     network = DEFAULT_NETWORK,
@@ -442,22 +413,20 @@ export const transferSeiTool = langchainTools.tool(
     to: string;
     amount: string;
     network?: string;
-  }) => {
-    try {
-      const unsignedTx = await services.buildSeiTransferTx(to, amount, network);
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        text: "An unsigned SEI transfer transaction has been prepared. Please sign and send it using your wallet.",
-        tool_output: [unsignedTx],
-      };
-    } catch (error) {
-      return {
-        text: `Error transferring ${amount} SEI to ${to}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'transfer_sei',
+      text: `Preparing SEI transfer of ${amount} SEI to ${to} on ${network}.`,
+      requestId,
+      userId,
+      meta: { amount: `${amount} SEI`, recipient: to, network },
+      buildTx: async () => {
+        const unsignedTx = await services.buildSeiTransferTx(to, amount, network);
+        return { transactions: [unsignedTx] };
+      },
+    });
   },
   {
     name: "transfer_sei",
@@ -474,26 +443,25 @@ export const transferSeiTool = langchainTools.tool(
 );
 
 export const transferTokenTool = langchainTools.tool(
-  async ({ tokenAddress, toAddress, amount, network = DEFAULT_NETWORK }) => {
-    try {
-      const unsignedTx = await services.buildTransferERC20(
-        tokenAddress,
-        toAddress,
-        amount,
-        network
-      );
-      return {
-        text: "An unsigned ERC20 transfer transaction has been prepared. Please sign and send it using your wallet.",
-        tool_output: [unsignedTx],
-      };
-    } catch (error) {
-      return {
-        text: `Error building ERC20 transfer transaction: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
-    }
+  ({ tokenAddress, toAddress, amount, network = DEFAULT_NETWORK }: {
+    tokenAddress: string;
+    toAddress: string;
+    amount: string;
+    network?: string;
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
+
+    return createTransactionResponse({
+      toolName: 'transfer_token',
+      text: `Preparing ERC20 token transfer of ${amount} tokens to ${toAddress} on ${network}.`,
+      requestId,
+      userId,
+      meta: { amount, tokenAddress, recipient: toAddress, network },
+      buildTx: async () => {
+        const unsignedTx = await services.buildTransferERC20(tokenAddress, toAddress, amount, network);
+        return { transactions: [unsignedTx] };
+      },
+    });
   },
   {
     name: "transfer_token",
@@ -522,7 +490,7 @@ export const transferTokenTool = langchainTools.tool(
 // NFT TOOLS
 
 export const transferNftTool = langchainTools.tool(
-  async ({
+  ({
     fromAddress,
     to,
     tokenAddress,
@@ -534,28 +502,26 @@ export const transferNftTool = langchainTools.tool(
     tokenAddress: string;
     tokenId: string;
     network?: string;
-  }) => {
-    try {
-      const result = await services.buildTransferERC721(
-        tokenAddress as `0x${string}`,
-        fromAddress,
-        to as `0x${string}`,
-        BigInt(tokenId),
-        network
-      );
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        text: "An unsigned ERC721 (NFT) transfer transaction has been prepared. Please sign and send it using your wallet.",
-        tool_output: [result],
-      };
-    } catch (error) {
-      return {
-        text: `Error transferring NFT ${tokenId} from ${tokenAddress} to ${to}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'transfer_nft',
+      text: `Preparing ERC721 NFT transfer of token #${tokenId} from ${fromAddress} to ${to}.`,
+      requestId,
+      userId,
+      meta: { tokenId, tokenAddress, from: fromAddress, to, network },
+      buildTx: async () => {
+        const result = await services.buildTransferERC721(
+          tokenAddress as `0x${string}`,
+          fromAddress,
+          to as `0x${string}`,
+          BigInt(tokenId),
+          network
+        );
+        return { transactions: [result] };
+      },
+    });
   },
   {
     name: "transfer_nft",
@@ -574,36 +540,36 @@ export const transferNftTool = langchainTools.tool(
 );
 
 export const transferErc1155Tool = langchainTools.tool(
-  async ({
+  ({
     tokenAddress,
     fromAddress,
     toAddress,
     tokenId,
     amount,
     network = DEFAULT_NETWORK,
-  }) => {
-    try {
-      const unsignedTx = await services.buildTransferERC1155(
-        tokenAddress,
-        fromAddress,
-        toAddress,
-        BigInt(tokenId),
-        amount,
-        network
-      );
+  }: {
+    tokenAddress: string;
+    fromAddress: string;
+    toAddress: string;
+    tokenId: string;
+    amount: string;
+    network?: string;
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        text: "An unsigned ERC1155 transfer transaction has been prepared. Please sign and send it using your wallet.",
-        tool_output: [unsignedTx],
-      };
-    } catch (error) {
-      return {
-        text: `Error building ERC1155 transfer transaction: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'transfer_erc1155',
+      text: `Preparing ERC1155 transfer of ${amount}x token #${tokenId} from ${fromAddress} to ${toAddress}.`,
+      requestId,
+      userId,
+      meta: { tokenId, tokenAddress, amount, from: fromAddress, to: toAddress, network },
+      buildTx: async () => {
+        const unsignedTx = await services.buildTransferERC1155(
+          tokenAddress, fromAddress, toAddress, BigInt(tokenId), amount, network
+        );
+        return { transactions: [unsignedTx] };
+      },
+    });
   },
   {
     name: "transfer_erc1155",
@@ -633,7 +599,7 @@ export const transferErc1155Tool = langchainTools.tool(
 // APPROVAL TOOLS
 
 export const approveTokenSpendingTool = langchainTools.tool(
-  async ({
+  ({
     spender,
     amount,
     tokenAddress,
@@ -643,28 +609,22 @@ export const approveTokenSpendingTool = langchainTools.tool(
     amount: string;
     tokenAddress: string;
     network?: string;
-  }) => {
-    try {
-      const result = await services.buildApproveERC20(
-        spender as `0x${string}`,
-        amount,
-        tokenAddress as `0x${string}`,
-        network
-      );
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        tool_output: [result],
-        executionId: result.executionId,
-      };
-    } catch (error) {
-      return {
-        text: `Error approving ${amount} tokens from ${tokenAddress} for spender ${spender}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'approve_token_spending',
+      text: `Preparing approval of ${amount} tokens from ${tokenAddress} for spender ${spender}.`,
+      requestId,
+      userId,
+      meta: { spender, amount, tokenAddress, network },
+      buildTx: async () => {
+        const result = await services.buildApproveERC20(
+          spender as `0x${string}`, amount, tokenAddress as `0x${string}`, network
+        );
+        return { transactions: [result] };
+      },
+    });
   },
   {
     name: "approve_token_spending",
@@ -684,7 +644,7 @@ export const approveTokenSpendingTool = langchainTools.tool(
 );
 
 export const approveErc20Tool = langchainTools.tool(
-  async ({
+  ({
     spender,
     amount,
     tokenAddress,
@@ -694,27 +654,22 @@ export const approveErc20Tool = langchainTools.tool(
     amount: string;
     tokenAddress: string;
     network?: string;
-  }) => {
-    try {
-      const result = await services.buildApproveERC20(
-        spender as `0x${string}`,
-        amount,
-        tokenAddress as `0x${string}`,
-        network
-      );
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        tool_output: [result],
-      };
-    } catch (error) {
-      return {
-        text: `Error approving ${amount} ERC20 tokens from ${tokenAddress} for spender ${spender}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'approve_erc20',
+      text: `Preparing ERC20 approval of ${amount} tokens from ${tokenAddress} for spender ${spender}.`,
+      requestId,
+      userId,
+      meta: { spender, amount, tokenAddress, network },
+      buildTx: async () => {
+        const result = await services.buildApproveERC20(
+          spender as `0x${string}`, amount, tokenAddress as `0x${string}`, network
+        );
+        return { transactions: [result] };
+      },
+    });
   },
   {
     name: "approve_erc20",
@@ -751,17 +706,17 @@ export const getTokenInfoTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(tokenInfo, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_token_info',
+        text: `Token info for ${tokenAddress}: ${(tokenInfo as any).symbol || 'unknown'} (${(tokenInfo as any).name || 'unknown'})`,
+        data: tokenInfo,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching token info for ${tokenAddress}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_token_info',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -794,16 +749,17 @@ export const getNftInfoTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(nftInfo, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_nft_info',
+        text: `NFT info for token #${tokenId} at ${tokenAddress}`,
+        data: nftInfo,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching NFT info for token ${tokenId} at ${tokenAddress}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_nft_info',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -831,20 +787,19 @@ export const getNftBalanceTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      // For ERC721, we need to implement a balance check - this would typically require checking ownership
-      // This is a placeholder implementation - you may need to implement specific ERC721 balance logic
       const balance = { address, tokenAddress, network, balance: "0" }; // Placeholder
 
-      return {
-        text: JSON.stringify(balance, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_nft_balance',
+        text: `NFT balance for ${address} at ${tokenAddress}: ${balance.balance}`,
+        data: balance,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching NFT balance for ${address} from ${tokenAddress}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_nft_balance',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -874,20 +829,19 @@ export const getErc1155BalanceTool = langchainTools.tool(
     network?: string;
   }) => {
     try {
-      // For ERC1155 balance, we need to implement balance checking for specific token IDs
-      // This is a placeholder implementation
       const balance = { address, tokenAddress, tokenId, network, balance: "0" }; // Placeholder
 
-      return {
-        text: JSON.stringify(balance, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_erc1155_balance',
+        text: `ERC1155 balance for token #${tokenId} at ${tokenAddress} for ${address}: ${balance.balance}`,
+        data: balance,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching ERC1155 balance for token ${tokenId} at ${tokenAddress} for ${address}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_erc1155_balance',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -912,28 +866,20 @@ export const getErc1155BalanceTool = langchainTools.tool(
 export const getAddressFromPrivateKeyTool = langchainTools.tool(
   async ({ privateKey }: { privateKey: string }) => {
     try {
-      // Import viem functions for address derivation
       const { privateKeyToAccount } = await import("viem/accounts");
       const account = privateKeyToAccount(privateKey as `0x${string}`);
 
-      return {
-        text: JSON.stringify(
-          {
-            privateKey: privateKey.slice(0, 10) + "...", // Mask private key for security
-            address: account.address,
-          },
-          null,
-          2
-        ),
-      };
+      return createQueryResponse({
+        toolName: 'get_address_from_private_key',
+        text: `Address derived: ${account.address}`,
+        data: { privateKey: privateKey.slice(0, 10) + "...", address: account.address },
+      });
     } catch (error) {
-      return {
-        text: `Error deriving address from private key: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_address_from_private_key',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -948,28 +894,26 @@ export const getAddressFromPrivateKeyTool = langchainTools.tool(
 // SEI WRAPPING TOOLS
 
 export const wrapSeiTool = langchainTools.tool(
-  async ({
+  ({
     amount,
     network = DEFAULT_NETWORK,
   }: {
     amount: string;
     network?: string;
-  }) => {
-    try {
-      const result = await services.buildDepositSEITx(amount, network);
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        tool_output: [result],
-      };
-    } catch (error) {
-      return {
-        text: `Error wrapping ${amount} SEI: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'wrap_sei',
+      text: `Preparing transaction to wrap ${amount} SEI to wSEI on ${network}.`,
+      requestId,
+      userId,
+      meta: { amount: `${amount} SEI`, network, action: 'wrap' },
+      buildTx: async () => {
+        const result = await services.buildDepositSEITx(amount, network);
+        return { transactions: [result] };
+      },
+    });
   },
   {
     name: "wrap_sei",
@@ -985,30 +929,26 @@ export const wrapSeiTool = langchainTools.tool(
 );
 
 export const unwrapSeiTool = langchainTools.tool(
-  async ({
+  ({
     amount,
     network = DEFAULT_NETWORK,
   }: {
     amount: string;
     network?: string;
-  }) => {
-    try {
-      const result = await services.buildWithdrawSEITx(amount, network);
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      return {
-        text: JSON.stringify(result, null, 2),
-        tool_output: [result],
-        executionId: result.executionId,
-      };
-    } catch (error) {
-      return {
-        text: `Error unwrapping ${amount} wSEI: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
-    }
+    return createTransactionResponse({
+      toolName: 'unwrap_sei',
+      text: `Preparing transaction to unwrap ${amount} wSEI to SEI on ${network}.`,
+      requestId,
+      userId,
+      meta: { amount: `${amount} wSEI`, network, action: 'unwrap' },
+      buildTx: async () => {
+        const result = await services.buildWithdrawSEITx(amount, network);
+        return { transactions: [result] };
+      },
+    });
   },
   {
     name: "unwrap_sei",
@@ -1028,19 +968,19 @@ export const unwrapSeiTool = langchainTools.tool(
 export const getTokenPricesTool = langchainTools.tool(
   async ({ tokens }: { tokens: string[] }) => {
     try {
-      // Get prices for multiple tokens - placeholder implementation
       const prices = tokens.map((token) => ({ token, price: "N/A" }));
 
-      return {
-        text: JSON.stringify(prices, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_token_prices',
+        text: `Prices for ${tokens.length} tokens retrieved`,
+        data: prices,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching token prices: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_token_prices',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -1059,16 +999,17 @@ export const getCurrentTokenPricesTool = langchainTools.tool(
     try {
       const prices = await services.getCurrentPrices(network);
 
-      return {
-        text: JSON.stringify(prices, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_current_token_prices',
+        text: `Current token prices on ${network} retrieved`,
+        data: prices,
+      });
     } catch (error) {
-      return {
-        text: `Error fetching current token prices: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_current_token_prices',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -1088,16 +1029,17 @@ export const getPriceOfTokenTool = langchainTools.tool(
   }) => {
     try {
       const price = await services.getPriceForToken(token, network);
-      return {
-        text: JSON.stringify({ token, price, network }, null, 2),
-      };
+      return createQueryResponse({
+        toolName: 'get_price_of_token',
+        text: `Price for ${token} on ${network}: ${price}`,
+        data: { token, price, network },
+      });
     } catch (error) {
-      return {
-        text: `Error fetching price for token ${token}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'get_price_of_token',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -1112,7 +1054,7 @@ export const getPriceOfTokenTool = langchainTools.tool(
 // TRADING/SWAP TOOLS
 
 export const createOrderTool = langchainTools.tool(
-  async ({
+  ({
     amount,
     destTokenAddress,
     srcTokenAddress,
@@ -1123,65 +1065,97 @@ export const createOrderTool = langchainTools.tool(
     orderType,
     network = DEFAULT_NETWORK,
     userAddress,
-  }) => {
-    try {
-      // The TWAP contract is the spender
-      const config = services.getTwapConfig(network);
-      const spenderAddress = config.twapAddress;
+  }: {
+    amount: string;
+    destTokenAddress: string;
+    srcTokenAddress: string;
+    fillDelay?: string;
+    limitPrice?: string;
+    chunks?: number;
+    deadline: string;
+    orderType?: string;
+    network?: string;
+    userAddress: string;
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      // Check current allowance
-      const allowance = await services.getAllowance(
-        srcTokenAddress,
-        userAddress,
-        spenderAddress,
-        network
-      );
+    return createTransactionResponse({
+      toolName: 'place_order',
+      text: `Preparing ${orderType || 'order'} to swap ${amount} tokens. Transaction(s) will be ready shortly.`,
+      requestId,
+      userId,
+      meta: {
+        orderType: orderType || 'MARKET_ORDER',
+        amount,
+        srcToken: srcTokenAddress,
+        destToken: destTokenAddress,
+        chunks,
+        deadline,
+        network,
+      },
+      buildTx: async () => {
+        // The TWAP contract is the spender
+        const twapConfig = services.getTwapConfig(network);
+        const spenderAddress = twapConfig.twapAddress;
 
-      const requiredAmount = parseUnits(amount, allowance.token.decimals);
-
-      const unsignedtxns = [];
-      // If allowance is less than the required amount, ask for approval.
-      if (allowance.raw < requiredAmount) {
-        const unsingedTx = await services.buildApproveERC20(
+        // Check current allowance
+        const allowance = await services.getAllowance(
           srcTokenAddress,
+          userAddress,
           spenderAddress,
-          amount,
           network
         );
-        unsignedtxns.push(unsingedTx);
-      }
 
-      // If we have enough allowance, proceed with building the limit order transaction.
-      const deadlineTimestamp = parseDeadlineToTimestamp(deadline);
-      const fillDelayInSeconds = fillDelay
-        ? parseDeadlineToTimestamp(fillDelay)
-        : null;
-      const unsignedTx = await services.buildask(
-        srcTokenAddress,
-        destTokenAddress,
-        amount,
-        fillDelayInSeconds,
-        chunks,
-        deadlineTimestamp,
-        limitPrice,
-        orderType as unknown as OrderTypeEnum,
-        network
-      );
-      unsignedtxns.push(unsignedTx);
+        const requiredAmount = parseUnits(amount, allowance.token.decimals);
 
-      return {
-        text: "An unsigned limit order transaction has been prepared. Please sign and send it using your wallet.",
-        tool_output: [...unsignedtxns],
-      };
-    } catch (error) {
-      return {
-        text: `Error building limit order transaction: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        tool_output: null,
-        isError: true,
-      };
-    }
+        const unsignedtxns = [];
+        // If allowance is less than the required amount, ask for approval.
+        if (allowance.raw < requiredAmount) {
+          const unsingedTx = await services.buildApproveERC20(
+            srcTokenAddress,
+            spenderAddress,
+            amount,
+            network
+          );
+          unsignedtxns.push(unsingedTx);
+        }
+
+        // If we have enough allowance, proceed with building the limit order transaction.
+        const deadlineTimestamp = parseDeadlineToTimestamp(deadline);
+        const fillDelayInSeconds = fillDelay
+          ? parseDeadlineToTimestamp(fillDelay)
+          : null;
+        const unsignedTx = await services.buildask(
+          srcTokenAddress,
+          destTokenAddress,
+          amount,
+          fillDelayInSeconds,
+          chunks,
+          deadlineTimestamp,
+          limitPrice,
+          orderType as unknown as OrderTypeEnum,
+          network
+        );
+        unsignedtxns.push(unsignedTx);
+
+        return {
+          transactions: unsignedtxns,
+          orderDetails: {
+            srcTokenAddress,
+            destTokenAddress,
+            amount,
+            limitPrice,
+            chunks,
+            deadline,
+            orderType,
+            network,
+          },
+          requiresApproval: unsignedtxns.length > 1,
+          txCount: unsignedtxns.length,
+          builtAt: new Date().toISOString(),
+        };
+      },
+    });
   },
   {
     name: "place_order",
@@ -1256,24 +1230,17 @@ export const convertTokenSymbolToAddressTool = langchainTools.tool(
     try {
       const tokenAddress = await services.resolveToken(symbol, network);
 
-      return {
-        text: JSON.stringify(
-          {
-            symbol,
-            address: tokenAddress,
-            network,
-          },
-          null,
-          2
-        ),
-      };
+      return createQueryResponse({
+        toolName: 'convert_token_symbol_to_address',
+        text: `Token ${symbol} on ${network}: ${tokenAddress}`,
+        data: { symbol, address: tokenAddress, network },
+      });
     } catch (error) {
-      return {
-        text: `Error converting token symbol ${symbol} to address: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'convert_token_symbol_to_address',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -1303,25 +1270,17 @@ export const convertAddressToTokenSymbolTool = langchainTools.tool(
         network
       );
 
-      return {
-        text: JSON.stringify(
-          {
-            address,
-            symbol: tokenInfo.symbol,
-            name: tokenInfo.name,
-            network,
-          },
-          null,
-          2
-        ),
-      };
+      return createQueryResponse({
+        toolName: 'convert_address_to_token_symbol',
+        text: `Address ${address} on ${network}: ${tokenInfo.symbol} (${tokenInfo.name})`,
+        data: { address, symbol: tokenInfo.symbol, name: tokenInfo.name, network },
+      });
     } catch (error) {
-      return {
-        text: `Error converting address ${address} to token symbol: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'convert_address_to_token_symbol',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
   {
@@ -1340,86 +1299,93 @@ export const convertAddressToTokenSymbolTool = langchainTools.tool(
 // CRYPTO MARKET DATA TOOLS
 
 export const getCryptoMarketDataTool = langchainTools.tool(
-  async ({
+  ({
     coinName = "bitcoin",
     timeframe = "7d",
   }: {
     coinName?: string;
     timeframe?: string;
-  }) => {
-    try {
-      // Map timeframes to days
-      const timeframeToDays: Record<string, number> = {
-        "24h": 1,
-        "7d": 7,
-        "1m": 30,
-        "3m": 90,
-        "1y": 365,
-      };
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
+    const coinId = tokenMappings[coinName?.toLowerCase()] || coinName?.toLowerCase();
+    
+    const timeframeToDays: Record<string, number> = {
+      "24h": 1,
+      "7d": 7,
+      "1m": 30,
+      "3m": 90,
+      "1y": 365,
+    };
+    const days = timeframeToDays[timeframe] || 7;
 
-      const coinId = tokenMappings[coinName?.toLowerCase()];
-
-      const days = timeframeToDays[timeframe] || 7;
-
-      // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
-      const completeCoinUrl = new URL(
-        `https://api.coingecko.com/api/v3/coins/${coinId}`,
-        
-      );
-      completeCoinUrl.searchParams.append("localization", "false");
-      completeCoinUrl.searchParams.append("tickers", "true");
-      completeCoinUrl.searchParams.append("market_data", "true");
-      completeCoinUrl.searchParams.append("community_data", "true");
-      completeCoinUrl.searchParams.append("developer_data", "false");
-      completeCoinUrl.searchParams.append("sparkline", "false");
-      
-
-      const completeCoinResponse = await fetch(completeCoinUrl.toString());
-      if (!completeCoinResponse.ok) {
-        throw new Error(
-          `CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`
+    return createAsyncResponse({
+      toolName: 'get_crypto_or_token_data',
+      text: `Fetching market data for ${coinName} (${timeframe} timeframe). Data will be available shortly.`,
+      dataType: 'CRYPTO_MARKET_DATA',
+      requestId,
+      userId,
+      meta: { coin: coinName, timeframe },
+      fetch: async () => {
+        // Fetch complete coin data (includes all market info, sentiment, liquidity, etc.)
+        const completeCoinUrl = new URL(
+          `https://api.coingecko.com/api/v3/coins/${coinId}`
         );
-      }
-      const completeCoinData = await completeCoinResponse.json();
+        completeCoinUrl.searchParams.append("localization", "false");
+        completeCoinUrl.searchParams.append("tickers", "true");
+        completeCoinUrl.searchParams.append("market_data", "true");
+        completeCoinUrl.searchParams.append("community_data", "true");
+        completeCoinUrl.searchParams.append("developer_data", "false");
+        completeCoinUrl.searchParams.append("sparkline", "false");
 
-      // Fetch chart data separately
-      const chartUrl = new URL(
-        `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`
-      );
-      chartUrl.searchParams.append("vs_currency", "usd");
-      chartUrl.searchParams.append("days", days.toString());
-
-      const chartResponse = await fetch(chartUrl.toString(),{
-        method:'GET',
-        headers:{
-          "x-cg-demo-api-key": env.COINGECKO_API_KEY
+        const completeCoinResponse = await fetch(completeCoinUrl.toString(), {
+          method: 'GET',
+          headers: {
+            "x-cg-demo-api-key": env.COINGECKO_API_KEY
+          }
+        });
+        if (!completeCoinResponse.ok) {
+          throw new Error(
+            `CoinGecko API error: ${completeCoinResponse.status} ${completeCoinResponse.statusText}`
+          );
         }
-      });
-      if (!chartResponse.ok) {
-        throw new Error(
-          `CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`
+        const completeCoinData = await completeCoinResponse.json();
+
+        // Fetch chart data separately
+        const chartUrl = new URL(
+          `https://api.coingecko.com/api/v3/coins/${coinId}/market_chart`
         );
-      }
-      const chartData = await chartResponse.json();
+        chartUrl.searchParams.append("vs_currency", "usd");
+        chartUrl.searchParams.append("days", days.toString());
 
-      // CoinGecko returns { prices: [[timestamp, price], ...], market_caps: [[timestamp, cap], ...] }
-      const prices = chartData.prices || [];
-      const marketCaps = chartData.market_caps || [];
+        const chartResponse = await fetch(chartUrl.toString(), {
+          method: 'GET',
+          headers: {
+            "x-cg-demo-api-key": env.COINGECKO_API_KEY
+          }
+        });
+        if (!chartResponse.ok) {
+          throw new Error(
+            `CoinGecko chart API error: ${chartResponse.status} ${chartResponse.statusText}`
+          );
+        }
+        const chartData = await chartResponse.json();
 
-      // Combine into [timestamp, price, marketCap][]
-      const formattedChartData: [number, number, number][] = [];
-      for (let i = 0; i < prices.length; i++) {
-        formattedChartData.push([
-          prices[i][0],
-          prices[i][1],
-          marketCaps[i] ? marketCaps[i][1] : 0,
-        ]);
-      }
+        // CoinGecko returns { prices: [[timestamp, price], ...], market_caps: [[timestamp, cap], ...] }
+        const prices = chartData.prices || [];
+        const marketCaps = chartData.market_caps || [];
 
-      // Return complete coin data with chart
-      return {
-        text: `I've fetched complete market data for ${coinId} including price, market cap, sentiment, and liquidity information.`,
-        data_output: {
+        // Combine into [timestamp, price, marketCap][]
+        const formattedChartData: [number, number, number][] = [];
+        for (let i = 0; i < prices.length; i++) {
+          formattedChartData.push([
+            prices[i][0],
+            prices[i][1],
+            marketCaps[i] ? marketCaps[i][1] : 0,
+          ]);
+        }
+
+        // Full payload for frontend (stored in MongoDB)
+        return {
           type: "CRYPTO_MARKET_DATA",
           coinId: completeCoinData.id,
           symbol: completeCoinData.symbol,
@@ -1439,21 +1405,14 @@ export const getCryptoMarketDataTool = langchainTools.tool(
           tickers: completeCoinData.tickers
             ? completeCoinData.tickers.slice(0, 10)
             : [],
-        },
-      };
-    } catch (error) {
-      return {
-        text: `Error fetching crypto market data: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        isError: true,
-      };
-    }
+        };
+      },
+    });
   },
   {
     name: "get_crypto_or_token_data",
     description:
-      "Get comprehensive cryptocurrency or token data including price charts, market cap, sentiment, and liquidity for popular coins and tokens. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency or even general query (like tell me about a token).",
+      "Get comprehensive cryptocurrency or token data including price charts, market cap, sentiment, and liquidity for popular coins and tokens. Use this when users ask about crypto prices, market performance, sentiment, or investment advice for any cryptocurrency or even general query (like tell me about a token).Default timeframe is 7 days",
     schema: z.object({
       coinName: z
         .string()
@@ -1470,7 +1429,7 @@ export const getCryptoMarketDataTool = langchainTools.tool(
 );
 
 export const simulateDCAStrategyTool = langchainTools.tool(
-  async ({
+  ({
     coin,
     total_investment,
     frequency,
@@ -1480,35 +1439,36 @@ export const simulateDCAStrategyTool = langchainTools.tool(
     total_investment: number;
     frequency: "daily" | "weekly";
     duration_days: number;
-  }) => {
-    try {
-      const STRATEGY_ENGINE_URL =
-        process.env.STRATEGY_ENGINE_URL ||
-        "http://localhost:3001/v1/strategies/dca/simulate";
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      const response = await axios.post(STRATEGY_ENGINE_URL, {
-        coin,
-        total_investment,
+    return createAsyncResponse({
+      toolName: 'simulate_dca_strategy',
+      text: `Running ${frequency} DCA simulation for ${coin.toUpperCase()} over ${duration_days} days with $${total_investment}. Results will be available shortly.`,
+      dataType: 'DCA_SIMULATION',
+      requestId,
+      userId,
+      meta: {
+        coin: coin.toUpperCase(),
+        totalInvestment: `$${total_investment}`,
         frequency,
-        duration_days,
-      });
+        durationDays: duration_days,
+      },
+      fetch: async () => {
+        const STRATEGY_ENGINE_URL =
+          process.env.STRATEGY_ENGINE_URL ||
+          "http://localhost:3001/v1/strategies/dca/simulate";
 
-      console.log(`[simulateDCAStrategyTool] Successfully simulated DCA strategy for ${response.data.summary.buy_count}`);
+        const response = await axios.post(STRATEGY_ENGINE_URL, {
+          coin,
+          total_investment,
+          frequency,
+          duration_days,
+        });
 
-      // Your tools MUST return JSON as string in the "text" field
-      return {
-        data_output: {
-          ...response.data,
-        },
-      };
-    } catch (error: any) {
-      return {
-        text: `Error simulating DCA strategy for ${coin}: ${
-          error?.response?.data?.detail || error.message
-        }`,
-        isError: true,
-      };
-    }
+        return response.data;
+      },
+    });
   },
   {
     name: "simulate_dca_strategy",
@@ -1530,7 +1490,7 @@ export const simulateDCAStrategyTool = langchainTools.tool(
 );
 
 export const simulateLumpSumStrategyTool = langchainTools.tool(
-  async ({
+  ({
     coin,
     total_investment,
     duration_days,
@@ -1538,32 +1498,34 @@ export const simulateLumpSumStrategyTool = langchainTools.tool(
     coin: string;
     total_investment: number;
     duration_days: number;
-  }) => {
-    try {
-      const STRATEGY_ENGINE_URL =
-        process.env.STRATEGY_ENGINE_URL ||
-        "http://localhost:3001/v1/strategies/lump-sum/simulate";
+  }, config: any) => {
+    const { userId, requestId } = extractConfig(config);
 
-      const response = await axios.post(STRATEGY_ENGINE_URL, {
-        coin,
-        total_investment,
-        duration_days,
-      });
+    return createAsyncResponse({
+      toolName: 'simulate_lump_sum_strategy',
+      text: `Running Lump Sum simulation for ${coin.toUpperCase()} over ${duration_days} days with $${total_investment}. Results will be available shortly.`,
+      dataType: 'LUMP_SUM_SIMULATION',
+      requestId,
+      userId,
+      meta: {
+        coin: coin.toUpperCase(),
+        totalInvestment: `$${total_investment}`,
+        durationDays: duration_days,
+      },
+      fetch: async () => {
+        const STRATEGY_ENGINE_URL =
+          process.env.STRATEGY_ENGINE_URL ||
+          "http://localhost:3001/v1/strategies/lump-sum/simulate";
 
-      return {
-        // Zyra frontend receives rich data here
-        data_output: {
-          ...response.data,
-        },
-      };
-    } catch (error: any) {
-      return {
-        text: `Error simulating Lump Sum strategy for ${coin}: ${
-          error?.response?.data?.detail || error.message
-        }`,
-        isError: true,
-      };
-    }
+        const response = await axios.post(STRATEGY_ENGINE_URL, {
+          coin,
+          total_investment,
+          duration_days,
+        });
+
+        return response.data;
+      },
+    });
   },
 
   {
@@ -1588,23 +1550,28 @@ export const trackRecordsTool = langchainTools.tool(
     address
   }: {
     address:string
-  }) => {
+  }, config: any) => {
     try {
-     
+      const { userId, requestId } = extractConfig(config);
 
-      const response = await getTrackedTransfers(address);
-
-      return {
-        // LLM MUST receive JSON string here
-        text: JSON.stringify(response, null, 2),
-      };
+      return createAsyncResponse({
+        toolName: 'trackRecords',
+        text: `Retrieving transaction records for address ${address}.`,
+        dataType: 'TRANSACTION_RECORDS',
+        requestId,
+        userId,
+        meta: { address },
+        fetch: async () => {
+          const response = await getTrackedTransfers(address);
+          return response;
+        },
+      });
     } catch (error: any) {
-      return {
-        text: `Error tracking transactions for ${address}: ${
-          error?.response?.data?.detail || error.message
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'async',
+        toolName: 'trackRecords',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
 
@@ -1618,75 +1585,46 @@ export const trackRecordsTool = langchainTools.tool(
   }
 );
 
-
-export const LatestTwitterTweetsTool = langchainTools.tool(
+export const subscribeToAddressTool = langchainTools.tool(
   async ({
-    topic
+    address,
+    chains = ["sei"]
   }: {
-    topic:string
-  }) => {
+    address: string;
+    chains?: string[];
+  }, config: any) => {
     try {
-     
-      const response = await getLatestTwitterTweets(topic);
-      return {
-        text:'Latest twitter posts have been fetched',
-        // LLM MUST receive JSON string here
-          data_output: {
-          ...response
-        },
-      };
+      const { userId } = extractConfig(config);
+      if (!userId) {
+        return createErrorResponse({
+          kind: 'query',
+          toolName: 'subscribeToAddress',
+          error: 'User ID not found in session context.',
+        });
+      }
+
+      const trackingService = container.get<TokenTrackingService>(TYPES.TokenTrackingService);
+      await trackingService.subscribe(userId, address, chains);
+
+      return createQueryResponse({
+        toolName: 'subscribeToAddress',
+        text: `Successfully subscribed to ${address} on ${chains.join(", ")}. You will now receive notifications for token transfers involving this address on these networks.`,
+        data: { address, chains, subscribed: true },
+      });
     } catch (error: any) {
-      return {
-        text: `Error in fetching twitter feeds for ${topic}: ${
-          error?.response?.data?.detail || error.message
-        }`,
-        isError: true,
-      };
+      return createErrorResponse({
+        kind: 'query',
+        toolName: 'subscribeToAddress',
+        error: error instanceof Error ? error : String(error),
+      });
     }
   },
-
   {
-    name: "FetchLatestTwitterTweets",
-    description:
-      "Get latest twitter(X) tweets for a given topic",
+    name: "subscribeToAddress",
+    description: "Subscribe to real-time transfer alerts for a wallet address on one or more chains (e.g., sei, ethereum, arbitrum, polygon, base).",
     schema: z.object({
-      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
-    }),
-  }
-);
-
-export const TopTwitterTweetsTool = langchainTools.tool(
-  async ({
-    topic
-  }: {
-    topic:string
-  }) => {
-    try {
-     
-
-      const response = await getTopTwitterTweets(topic);
-
-       return {
-          data_output: {
-          ...response,
-        },
-      };
-    } catch (error: any) {
-      return {
-        text: `Error in fetching twitter feeds for ${topic}: ${
-          error?.response?.data?.detail || error.message
-        }`,
-        isError: true,
-      };
-    }
-  },
-
-  {
-    name: "FetchTopTwitterTweets",
-    description:
-      "Get Top twitter(X) tweets for a given topic",
-    schema: z.object({
-      topic: z.string().describe("topic for which we want to fetch tweets from twitter(X)"),
+      address: z.string().describe("The wallet address to track"),
+      chains: z.array(z.string()).optional().describe("The networks to track on (sei, ethereum, arbitrum, polygon, base). Defaults to ['sei']."),
     }),
   }
 );
@@ -1753,10 +1691,15 @@ export const cryptoTools:StructuredTool[] = [
 
 export const databaseTools: StructuredTool[] = [
     trackRecordsTool,
+    subscribeToAddressTool,
 ]
 
 export const twitterTools:StructuredTool[] = [
     LatestTwitterTweetsTool,
-  TopTwitterTweetsTool,
+    TopTwitterTweetsTool
+]
+
+export const bridgeTools:StructuredTool[] = [
+  ...stargateTools
 ]
 

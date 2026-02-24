@@ -27,6 +27,7 @@ export const TYPES = {
     OrderService: Symbol.for('OrderService'),
     TokenTrackingService: Symbol.for('TokenTrackingService'),
     SocketService: Symbol.for('SocketService'),
+    StreamRegistry: Symbol.for('StreamRegistry'),
     PortfolioSummaryService: Symbol.for('PortfolioSummaryService'),
     AddressActivitySummaryService: Symbol.for('AddressActivitySummaryService'),
 

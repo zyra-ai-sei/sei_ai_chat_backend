@@ -9,12 +9,17 @@ import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { MemorySaver } from "@langchain/langgraph";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { ChatOpenAI, ChatOpenAICallOptions } from "@langchain/openai";
-import { HumanMessage, SystemMessage, trimMessages } from "@langchain/core/messages";
+import {
+  HumanMessage,
+  SystemMessage,
+  trimMessages,
+} from "@langchain/core/messages";
 import { MultiServerMCPClient } from "@langchain/mcp-adapters";
 import { StructuredTool } from "@langchain/core/tools";
 import { MongoClient } from "mongodb";
 import { MongoDBSaver } from "@langchain/langgraph-checkpoint-mongodb";
 import {
+  bridgeTools,
   cryptoTools,
   databaseTools,
   twitterTools,
@@ -27,7 +32,7 @@ import { randomUUID } from "crypto";
 import { LanguageModelLike } from "@langchain/core/language_models/base";
 
 @injectable()
-export class LlmService implements ILlmService {
+export class LlmService {
   private genAI: LanguageModelLike;
   private model: string;
   private sessionId: string;
@@ -77,6 +82,11 @@ export class LlmService implements ILlmService {
       });
 
       const state = initialState?.values?.messages || [];
+
+      // Track current requestId - it's set by HumanMessage and applies to all following messages
+      // until the next HumanMessage
+      let currentRequestId: string | null = null;
+
       const messages = state
         .filter((message: any) => {
           if (message.constructor.name === "SystemMessage") return false;
@@ -88,17 +98,29 @@ export class LlmService implements ILlmService {
           return true;
         })
         .map((message: any) => {
+          // Update currentRequestId when we see a HumanMessage
+          if (message.constructor.name === "HumanMessage") {
+            currentRequestId = message.additional_kwargs?.requestId || null;
+          }
+
           if (message.constructor.name === "ToolMessage") {
-            const test = JSON.stringify(message);
-            // Parse tool content and include status if available
             try {
               const parsedContent = JSON.parse(message.content);
-              // Extract tool_output from the parsed content
-              let toolOutput = parsedContent.tool_output;
 
-              let dataOutput = parsedContent.data_output;
+              // ── New unified ToolResponse format ──────────────────
+              if (parsedContent.kind) {
+                return {
+                  type: "ToolMessage",
+                  result: parsedContent,
+                  requestId: currentRequestId,
+                  toolCallId: message.tool_call_id || null,
+                  toolName: message.name || parsedContent.toolName,
+                  timestamp: new Date().toISOString(),
+                };
+              }
 
-              // Extract display text from content array if it exists
+              // ── Legacy format (pre-migration messages) ───────────
+              let executionId = parsedContent._dataRef?.executionId || null;
               let displayText = "";
               if (
                 parsedContent.content &&
@@ -115,54 +137,81 @@ export class LlmService implements ILlmService {
                   typeof parsedContent.result.content === "string"
                     ? parsedContent.result.content
                     : JSON.stringify(parsedContent.result.content);
+              } else if (parsedContent.text) {
+                displayText = parsedContent.text;
               } else {
                 displayText = JSON.stringify(parsedContent);
               }
-              if (toolOutput) {
+
+              const baseResponse = {
+                type: message.constructor.name,
+                content: displayText,
+                requestId: currentRequestId,
+                toolCallId: message.tool_call_id || null,
+                executionId,
+                isAsync: parsedContent._dataRef?.isAsync || false,
+                dataType: parsedContent._dataRef?.dataType || null,
+                status:
+                  parsedContent._dataRef?.status ||
+                  parsedContent.status ||
+                  "unexecuted",
+                hash: parsedContent.hash,
+                toolName:
+                  message.name ||
+                  parsedContent._dataRef?.toolName ||
+                  parsedContent.toolName,
+                timestamp: parsedContent.timestamp || new Date().toISOString(),
+              };
+
+              if (parsedContent.tool_output) {
                 return {
-                  type: message.constructor.name,
-                  content: displayText,
-                  id: message.id, // Include the message ID
-                  status: parsedContent.status || "unexecuted",
-                  hash: parsedContent.hash,
-                  toolName:
-                    message.name ||
-                    message.tool_call_id ||
-                    parsedContent.toolName,
-                  timestamp:
-                    parsedContent.timestamp || new Date().toISOString(),
-                  tool_output: toolOutput,
+                  ...baseResponse,
+                  tool_output: parsedContent.tool_output,
                 };
-              } else
+              } else {
                 return {
-                  type: message.constructor.name,
-                  content: displayText,
-                  id: message.id, // Include the message ID
-                  status: parsedContent.status || "unexecuted",
-                  hash: parsedContent.hash,
-                  toolName:
-                    message.name ||
-                    message.tool_call_id ||
-                    parsedContent.toolName,
-                  timestamp:
-                    parsedContent.timestamp || new Date().toISOString(),
-                  data_output: dataOutput,
+                  ...baseResponse,
+                  data_output: parsedContent.data_output,
                 };
+              }
             } catch (parseError) {
               console.warn("Failed to parse tool message content:", parseError);
               return {
                 type: message.constructor.name,
                 content: message.content,
+                requestId: currentRequestId,
+                toolCallId: message.tool_call_id || null,
                 status: "unexecuted",
                 timestamp: new Date().toISOString(),
               };
             }
           }
 
+          // Handle AIMessage with tool_calls
+          if (
+            message.constructor.name === "AIMessage" ||
+            message.constructor.name === "AIMessageChunk"
+          ) {
+            const toolCalls = message.tool_calls || [];
+            return {
+              type: message.constructor.name,
+              content: message.content,
+              requestId: currentRequestId,
+              timestamp: new Date().toISOString(),
+              // Include tool_calls array so frontend can link to ToolMessages via toolCallId
+              tool_calls: toolCalls.map((tc: any) => ({
+                id: tc.id,
+                name: tc.name,
+                args: tc.args,
+              })),
+            };
+          }
+
+          // Default case (HumanMessage and others)
           return {
             type: message.constructor.name,
             content: message.content,
-            id: message.id, // Include the message ID
+            requestId: currentRequestId,
             timestamp: new Date().toISOString(),
           };
         });
@@ -170,110 +219,6 @@ export class LlmService implements ILlmService {
     } catch (error) {
       console.error("Error getting chat history:", error);
       throw new Error(`Failed to retrieve chat history: ${error.message}`);
-    }
-  }
-
-  /**
-   * Update a specific message by its execution ID in tool_output
-   */
-  async updateMessageById(
-    userId: string,
-    address: string,
-    network: string,
-    executionId: string,
-    executionState: "completed" | "pending" | "failed",
-    txnHash?: string,
-  ): Promise<boolean> {
-    try {
-      // Get the chat agent (same way as getChatHistory)
-      const chat = await this.initChat(address, network);
-      if (!chat) {
-        return false;
-      }
-
-      // Get current state
-      const currentState = await chat.getState({
-        configurable: { thread_id: userId },
-      });
-
-      if (!currentState?.values?.messages) {
-        return false;
-      }
-
-      const messages = currentState.values.messages;
-      let messageUpdated = false;
-
-      // Iterate through messages to find the one with the matching executionId
-      for (const message of messages) {
-        if (message.constructor.name === "ToolMessage") {
-          try {
-            const parsedContent = JSON.parse(message.content);
-
-            // Check if tool_output exists and is an array
-            if (
-              parsedContent.tool_output &&
-              Array.isArray(parsedContent.tool_output)
-            ) {
-              const toolOutputs = parsedContent.tool_output;
-
-              // Find the output with the matching executionId
-              const outputIndex = toolOutputs.findIndex(
-                (output: any) => output.executionId === executionId,
-              );
-
-              if (outputIndex !== -1) {
-                // Update the specific output
-                const output = toolOutputs[outputIndex];
-
-                // Reconstruct object to place new fields after executionId
-                const newOutput: any = {};
-                for (const key of Object.keys(output)) {
-                  newOutput[key] = output[key];
-                  if (key === "executionId") {
-                    newOutput.executionStatus = executionState;
-                    if (txnHash) {
-                      newOutput.txnHash = txnHash;
-                    }
-                  }
-                }
-
-                // Ensure fields are added if executionId wasn't the key (though it should be)
-                if (!newOutput.executionStatus) {
-                  newOutput.executionStatus = executionState;
-                  if (txnHash) newOutput.txnHash = txnHash;
-                }
-
-                toolOutputs[outputIndex] = newOutput;
-
-                // Update the message content
-                message.content = JSON.stringify(parsedContent);
-                messageUpdated = true;
-                break; // Stop searching after finding the match
-              }
-            }
-          } catch (parseError) {
-            // Ignore parsing errors for non-JSON content
-            continue;
-          }
-        }
-      }
-
-      if (!messageUpdated) {
-        console.log(
-          `No tool output found with executionId ${executionId} for userId: ${userId}`,
-        );
-        return false;
-      }
-
-      // Update the state back to the graph
-      await chat.updateState(
-        { configurable: { thread_id: userId } },
-        { messages: messages },
-      );
-      return true;
-    } catch (error) {
-      console.error("Error updating message by execution ID:", error);
-      return false;
     }
   }
 
@@ -294,19 +239,25 @@ export class LlmService implements ILlmService {
   async initChat(address: string, network: string): Promise<any> {
     console.log("reached initChat");
 
-    const allTools = [...cryptoTools, ...databaseTools, ...twitterTools];
+    const allTools = [
+      ...cryptoTools,
+      ...databaseTools,
+      ...twitterTools,
+      ...bridgeTools,
+    ];
 
     const agent = createReactAgent({
       llm: this.genAI,
       tools: allTools,
       checkpointSaver: this.checkpointer,
+      // Limit agent iterations to prevent excessive tool calls (most requests need 1-3 iterations)
       stateModifier: async (state: any) => {
         const systemPrompt = getGeneralSystemPrompt(address, network);
         const messages = state.messages;
-        
+
         // 1. Minimum messages to trigger truncation (e.g., keep last 20)
         const K = 20;
-        
+
         if (messages.length <= K) {
           return [new SystemMessage(systemPrompt), ...messages];
         }
@@ -317,15 +268,15 @@ export class LlmService implements ILlmService {
         // 3. CRITICAL: Walk backwards until we find a HumanMessage.
         // This ensures the history the model sees always starts with a fresh user intent,
         // and automatically includes all associated AI thoughts and Tool results that followed it.
-        while (sliceIndex > 0 && messages[sliceIndex].constructor.name !== "HumanMessage") {
+        while (
+          sliceIndex > 0 &&
+          messages[sliceIndex].constructor.name !== "HumanMessage"
+        ) {
           sliceIndex--;
         }
 
         // 4. Return system prompt + the safe windowed slice
-        return [
-          new SystemMessage(systemPrompt),
-          ...messages.slice(sliceIndex)
-        ];
+        return [new SystemMessage(systemPrompt), ...messages.slice(sliceIndex)];
       },
     });
 
@@ -357,11 +308,15 @@ export class LlmService implements ILlmService {
   async *streamMessage(
     prompt: string,
     userId: string,
+    requestId: string,
     address: string,
     network: string,
     abortSignal?: AbortSignal,
     messageType: "human" | "system" = "human",
   ): AsyncGenerator<LlmStreamChunk> {
+    // Generate a unique requestId for this entire request
+    // This groups all AI messages, tool calls, and responses together
+
     try {
       // await this.sanitizeHistory(address);
       const chat = await this.initChat(address, network);
@@ -370,18 +325,22 @@ export class LlmService implements ILlmService {
         throw new Error("Chat session not initialized");
       }
 
+      // Include requestId in the message's additional_kwargs for persistence
       const message =
         messageType === "system"
           ? new HumanMessage({
               content: prompt,
-              additional_kwargs: { type: "system" },
+              additional_kwargs: { type: "system", requestId },
             })
-          : new HumanMessage(prompt);
+          : new HumanMessage({
+              content: prompt,
+              additional_kwargs: { requestId },
+            });
 
       const stream = chat.streamEvents(
         { messages: [message] },
         {
-          configurable: { thread_id: userId },
+          configurable: { thread_id: userId, requestId },
           version: "v2",
           // signal: controller.signal,
         },
@@ -395,90 +354,137 @@ export class LlmService implements ILlmService {
         if (event.event === "on_chat_model_stream") {
           const chunk = event.data?.chunk;
 
-          // The chunk is an AIMessageChunk with content property
-          if (chunk && chunk.text && typeof chunk.text === "string") {
-            yield { type: "token", text: chunk.text } as LlmStreamChunk;
+          // Extract text content from the chunk
+          let text = "";
+          if (chunk) {
+            if (typeof chunk.content === "string") {
+              text = chunk.content;
+            } else if (Array.isArray(chunk.content)) {
+              text = chunk.content
+                .filter((c: any) => c.type === "text")
+                .map((c: any) => c.text)
+                .join("");
+            } else if (chunk.text) {
+              text = chunk.text;
+            }
+          }
+
+          if (text) {
+            yield { type: "token", text, requestId } as LlmStreamChunk;
           }
         }
         // Handle tool execution completion
         else if (event.event === "on_tool_end") {
           const output = event.data?.output;
+          const toolCallId = output?.tool_call_id || event.run_id;
 
-          // Skip if we've already processed this tool call
-          const toolCallId = output?.tool_call_id;
+          if (toolCallId && seenToolCalls.has(toolCallId)) continue;
+          if (toolCallId) seenToolCalls.add(toolCallId);
 
-          if (toolCallId && seenToolCalls.has(toolCallId)) {
-            continue;
-          }
+          if (output) {
+            let parsed: any;
 
-          if (toolCallId) {
-            seenToolCalls.add(toolCallId);
-          }
+            // output might be the direct tool result object, or a ToolMessage with .content string
+            if (typeof output.content === "string") {
+              try {
+                parsed = JSON.parse(output.content);
+              } catch {
+                parsed = output.content;
+              }
+            } else if (output.content) {
+              parsed = output.content;
+            } else {
+              parsed = output;
+            }
 
-          const toolName = output?.name || "unknown";
-
-          let toolContent = "";
-          let toolOutput: any[] = [];
-          let data_output: any;
-
-          // Extract content from the tool output
-          if (output && typeof output === "object") {
-            const rawContent = output.content;
-
-            toolContent =
-              typeof rawContent === "string"
-                ? rawContent
-                : JSON.stringify(rawContent);
-
-            // Try to parse the content JSON
             try {
-              const parsed = JSON.parse(toolContent);
-              // Extract executionId if present
-
-              if (parsed.data_output) {
-                data_output = parsed.data_output;
+              // ── New unified ToolResponse format ──────────────────
+              if (parsed && typeof parsed === "object" && parsed.kind) {
                 yield {
-                  type: "data",
-                  content: toolContent,
-                  data_output,
+                  type: "tool_result",
+                  result: parsed,
+                  toolCallId: toolCallId || undefined,
+                  requestId,
                 } as LlmStreamChunk;
                 continue;
               }
 
-              // Check if it has tool_output field (our custom format)
-              if (parsed.tool_output) {
-                toolOutput = this.normalizeToolOutputs(
-                  parsed.tool_output,
-                  toolIndex,
-                );
+              // ── Legacy fallback (pre-migration messages) ────────
+              if (parsed && typeof parsed === "object" && parsed._dataRef) {
+                const {
+                  executionId,
+                  dataType,
+                  toolName: refToolName,
+                  status,
+                  isAsync,
+                } = parsed._dataRef;
+                yield {
+                  type: "tool_result",
+                  result: {
+                    kind: isAsync ? "async" : "query",
+                    executionId: executionId || randomUUID(),
+                    toolName: refToolName || output?.name || "unknown",
+                    requestId,
+                    text: parsed.text || "",
+                    isError: false,
+                    ...(isAsync
+                      ? {
+                          dataType: dataType || "UNKNOWN",
+                          dataStatus: status || "pending",
+                        }
+                      : { data: parsed }),
+                  } as any,
+                  toolCallId: toolCallId || undefined,
+                  requestId,
+                } as LlmStreamChunk;
+                if (!parsed.tool_output) continue;
               }
 
-              if (!toolOutput.length) {
-                const fallbackContent = this.safeJsonParse(toolContent);
-                toolOutput = this.normalizeToolOutputs(
-                  fallbackContent,
-                  toolIndex,
-                );
-              }
-
-              if (!toolOutput.length) {
+              if (parsed && typeof parsed === "object" && parsed.data_output) {
+                yield {
+                  type: "tool_result",
+                  result: {
+                    kind: "query",
+                    executionId: randomUUID(),
+                    toolName: output?.name || "unknown",
+                    requestId,
+                    text: "",
+                    isError: false,
+                    data: parsed.data_output,
+                  } as any,
+                  toolCallId: toolCallId || undefined,
+                  requestId,
+                } as LlmStreamChunk;
                 continue;
               }
 
-              yield {
-                type: "tool",
-                toolName,
-                content: toolContent,
-                tool_output: toolOutput,
-              } as LlmStreamChunk;
-
-              toolIndex += toolOutput.length;
-            } catch {
-              // If parsing fails, treat content as plain text
+              if (parsed && typeof parsed === "object" && parsed.tool_output) {
+                const toolOutputs = this.normalizeToolOutputs(
+                  parsed.tool_output,
+                  toolIndex,
+                );
+                if (toolOutputs.length) {
+                  yield {
+                    type: "tool_result",
+                    result: {
+                      kind: "transaction",
+                      executionId: randomUUID(),
+                      toolName: output?.name || "unknown",
+                      requestId,
+                      text: parsed.text || "",
+                      isError: false,
+                    } as any,
+                    toolCallId: toolCallId || undefined,
+                    requestId,
+                  } as LlmStreamChunk;
+                  toolIndex += toolOutputs.length;
+                }
+                continue;
+              }
+            } catch (err) {
+              console.error("Error parsing tool result in streamMessage:", err);
             }
           }
-
-          // Add ID if not present
         }
       }
     } catch (error: any) {
@@ -545,15 +551,26 @@ export class LlmService implements ILlmService {
           .filter((msg: any) => msg.constructor.name === "ToolMessage")
           .map((msg: any, toolIndex: number) => {
             try {
-              // Parse the JSON string content
               const parsed = JSON.parse(msg.content);
 
+              // ── New unified ToolResponse format ──────────────────
+              if (parsed.kind) {
+                return {
+                  id: toolIndex,
+                  result: parsed,
+                  content: parsed.text || "",
+                  tool_output:
+                    parsed.kind === "transaction"
+                      ? { executionId: parsed.executionId }
+                      : undefined,
+                };
+              }
+
+              // ── Legacy format (pre-migration) ───────────────────
               if (parsed && typeof parsed === "object") {
-                // MCP tool response structure
                 const mcpResponse = parsed;
                 let content = "";
 
-                // Extract text from content array
                 if (
                   mcpResponse &&
                   typeof mcpResponse === "object" &&
@@ -571,7 +588,6 @@ export class LlmService implements ILlmService {
                   content = JSON.stringify(mcpResponse);
                 }
 
-                // Extract tool_output and add ID
                 const toolOutput =
                   parsed.tool_output ||
                   (mcpResponse && typeof mcpResponse === "object"
@@ -597,7 +613,6 @@ export class LlmService implements ILlmService {
                   tool_output: undefined,
                 };
               } else {
-                // Fallback
                 return {
                   id: toolIndex,
                   content: msg.content || "",
@@ -605,7 +620,6 @@ export class LlmService implements ILlmService {
                 };
               }
             } catch (error) {
-              // If parsing fails, return as-is
               return {
                 id: toolIndex,
                 content: msg.content || "",
@@ -659,6 +673,199 @@ export class LlmService implements ILlmService {
       return JSON.parse(value) as T;
     } catch {
       return undefined;
+    }
+  }
+
+  /**
+   * Retrieve a single tool query result by executionId
+   */
+  async getToolQueryResult(executionId: string): Promise<any> {
+    try {
+      const ToolQueryResult = (
+        await import("../database/mongo/models/ToolQueryResult")
+      ).default;
+      const result = await ToolQueryResult.findOne({ executionId }).lean();
+      return result;
+    } catch (error) {
+      console.error("Error fetching tool query result:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Retrieve multiple tool query results by executionIds
+   */
+  async getToolQueryResults(executionIds: string[]): Promise<Map<string, any>> {
+    const resultsMap = new Map<string, any>();
+    try {
+      const ToolQueryResult = (
+        await import("../database/mongo/models/ToolQueryResult")
+      ).default;
+      const results = await ToolQueryResult.find({
+        executionId: { $in: executionIds },
+      }).lean();
+
+      for (const result of results) {
+        resultsMap.set(result.executionId, result);
+      }
+      return resultsMap;
+    } catch (error) {
+      console.error("Error fetching tool query results:", error);
+      return resultsMap;
+    }
+  }
+
+  /**
+   * Retrieve tool query results grouped by requestIds
+   * Returns a map where key is requestId and value is array of tool outputs
+   */
+  async getToolQueryResultsByRequestIds(
+    requestIds: string[],
+  ): Promise<Record<string, any[]>> {
+    const resultsMap: Record<string, any[]> = {};
+
+    // Initialize empty arrays for all requested IDs
+    for (const requestId of requestIds) {
+      resultsMap[requestId] = [];
+    }
+
+    try {
+      const ToolQueryResult = (
+        await import("../database/mongo/models/ToolQueryResult")
+      ).default;
+      const results = await ToolQueryResult.find({
+        requestId: { $in: requestIds },
+      }).lean();
+
+      for (const result of results) {
+        if (result.requestId && resultsMap[result.requestId]) {
+          resultsMap[result.requestId].push({
+            executionId: result.executionId,
+            toolName: result.toolName,
+            status: result.execution?.status,
+            dataType: result.data?.type,
+            payload: result.data?.payload,
+            summary: result.summary?.text,
+            txHashes: result.data?.payload?.transactions
+              ?.map((t: any) => t.txHash)
+              .filter(Boolean),
+            createdAt: result.createdAt,
+            completedAt: result.execution?.completedAt,
+          });
+        }
+      }
+      return resultsMap;
+    } catch (error) {
+      console.error("Error fetching tool query results by requestIds:", error);
+      return resultsMap;
+    }
+  }
+
+  /**
+   * Update the transaction status of a tool query result (for blockchain transactions)
+   * This is separate from execution.status which tracks data fetching
+   */
+  async updateTransactionStatus(
+    executionId: string,
+    status: "unsigned" | "pending" | "completed" | "failed",
+    txHash?: string,
+    error?: string,
+    transactionIndex: number = 0,
+  ): Promise<{ success: boolean; error?: string; data?: any }> {
+    try {
+      const ToolQueryResult = (
+        await import("../database/mongo/models/ToolQueryResult")
+      ).default;
+
+      const updateFields: Record<string, any> = {
+        [`data.payload.transactions.${transactionIndex}.status`]: status,
+      };
+
+      if (status === "pending") {
+        updateFields[`data.payload.transactions.${transactionIndex}.signedAt`] =
+          new Date();
+      }
+
+      if (status === "completed" || status === "failed") {
+        updateFields[
+          `data.payload.transactions.${transactionIndex}.confirmedAt`
+        ] = new Date();
+      }
+
+      if (txHash) {
+        updateFields[`data.payload.transactions.${transactionIndex}.txHash`] =
+          txHash;
+      }
+
+      if (error) {
+        updateFields[`data.payload.transactions.${transactionIndex}.error`] =
+          error;
+      }
+
+      const result = await ToolQueryResult.findOneAndUpdate(
+        { executionId },
+        { $set: updateFields },
+        { new: true },
+      ).lean();
+
+      if (!result) {
+        return {
+          success: false,
+          error: `No ToolQueryResult found with executionId: ${executionId}`,
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          executionId: result.executionId,
+          toolName: result.toolName,
+        },
+      };
+    } catch (error: any) {
+      console.error("Error updating transaction status:", error);
+      return {
+        success: false,
+        error: `Exception: ${error.message}`,
+      };
+    }
+  }
+
+  /**
+   * Update the execution status of a tool query result (for data fetching)
+   */
+  async updateToolQueryResultStatus(
+    executionId: string,
+    status: "pending" | "completed" | "failed",
+    error?: string,
+  ): Promise<boolean> {
+    try {
+      const ToolQueryResult = (
+        await import("../database/mongo/models/ToolQueryResult")
+      ).default;
+
+      const updateFields: Record<string, any> = {
+        "execution.status": status,
+      };
+
+      if (status === "completed" || status === "failed") {
+        updateFields["execution.completedAt"] = new Date();
+      }
+
+      if (error) {
+        updateFields["execution.error"] = error;
+      }
+
+      const result = await ToolQueryResult.findOneAndUpdate(
+        { executionId },
+        { $set: updateFields },
+        { new: true },
+      );
+
+      return result !== null;
+    } catch (error) {
+      console.error("Error updating tool query result status:", error);
+      return false;
     }
   }
 }
